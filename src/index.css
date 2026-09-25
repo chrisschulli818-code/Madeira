@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --color-background: #faf8f5;
+  --color-surface: #ffffff;
+  --color-muted: #f3efe9;
+  --color-border: #e6dfd4;
+  --color-foreground: #1f1a14;
+  --color-subtle: #6f655a;
+  --color-primary: #b45309;
+  --color-primary-hover: #92400e;
+  --color-primary-soft: #fef3c7;
+  --color-accent: #0f766e;
+  --color-danger: #b91c1c;
+  --color-warning-soft: #fff7ed;
+
+  /* Cores de material (viewport e plano de corte) */
+  --color-mat-carcass: #e9dcc6;
+  --color-mat-front: #c98f5a;
+  --color-mat-back: #b8ab97;
+  --color-mat-drawer: #dccbad;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+  input[type='number']::-webkit-inner-spin-button {
+    opacity: 0.4;
+  }
+}
+
+/* --- Impressão / PDF ------------------------------------------------------ */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  html,
+  body,
+  #root {
+    height: auto;
+    background: white;
+  }
+  .print-break {
+    break-before: page;
+  }
+  .avoid-break {
+    break-inside: avoid;
+  }
+}
