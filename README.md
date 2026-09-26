@@ -15,11 +15,13 @@ Templates: balcão inferior (gavetas + porta), armário aéreo, guarda-roupa mod
 ## Como rodar
 
 ```bash
-npm install
-npm run dev        # http://localhost:5173
-npm test           # testes dos motores de cálculo (Vitest)
-npm run build      # typecheck + build de produção
+yarn install
+yarn start         # http://localhost:5173
+yarn test          # testes dos motores de cálculo (Vitest)
+yarn build         # typecheck + build de produção
 ```
+
+Com npm: `npm install` e `npm start`.
 
 ## Stack
 
