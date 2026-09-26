@@ -43,10 +43,13 @@ export function buildItemResults(items: ProjectItem[]): ItemResult[] {
 
 const qty = (item: ProjectItem) => Math.max(1, Math.floor(item.quantity || 1));
 
-/** Lista de corte do projeto: peças de todos os móveis, com quantidades multiplicadas. */
+/** Móveis que vão para a produção (objetos do ambiente ficam de fora). */
+export const producible = (results: ItemResult[]) => results.filter(({ item }) => item.templateId !== 'prop');
+
+/** Lista de corte do projeto: peças de todos os móveis, com quantidades multiplicadas (sem peças decorativas). */
 export function projectPieces(results: ItemResult[]): ProjectPiece[] {
-  return results.flatMap(({ item, model }) =>
-    model.pieces.map((p) => ({ ...p, quantity: p.quantity * qty(item), itemId: item.id, itemName: item.name })),
+  return producible(results).flatMap(({ item, model }) =>
+    model.pieces.filter((p) => !p.decorative).map((p) => ({ ...p, quantity: p.quantity * qty(item), itemId: item.id, itemName: item.name })),
   );
 }
 
@@ -56,16 +59,16 @@ export function projectHardware(
   pieces: ProjectPiece[],
   materials: Record<MaterialRole, MaterialSpec>,
 ): HardwareItem[] {
-  const perItem = results.map(({ item, model }) => ({
+  const perItem = producible(results).map(({ item, model }) => ({
     items: computeHardware(model, materials, { includeConsumables: false }),
     quantity: qty(item),
     label: item.name,
   }));
-  const needsGlue = results.some(({ model }) => model.assembly === 'dowel');
+  const needsGlue = producible(results).some(({ model }) => model.assembly === 'dowel');
   const consumables = consumableItems(pieces, materials, needsGlue).map((c) => ({ ...c, id: `${c.category}:${c.name}:${c.specification}` }));
   return mergeHardware([...perItem, { items: consumables, quantity: 1 }]);
 }
 
 export function projectTools(results: ItemResult[], services: ServiceSettings): ToolRequirement[] {
-  return mergeTools(results.map(({ model }) => computeTools(model, services)));
+  return mergeTools(producible(results).map(({ model }) => computeTools(model, services)));
 }

@@ -37,7 +37,14 @@ A partir das medidas externas e das opções de construção, gera automaticamen
 - **Tela expandida**: esconde cabeçalho e abas e deixa só o editor e o 3D (botão **Expandir**, Esc para sair).
   **Novo → Do zero** já abre o projeto em branco nesse modo.
 
-Templates: balcão inferior, armário aéreo, guarda-roupa modular, mesa de trabalho e móvel livre. Em cada vão é possível
+- **Imagens do ambiente**: escolha um ponto de vista (olhando para cada parede, dos 4 cantos, entrando pela porta,
+  de cima, visão geral) ou clique na planta onde você está e para onde olha; **Gerar imagem** baixa um PNG Full HD
+  com sombras, cores dos materiais, das paredes e do piso. As imagens ficam numa galeria e entram no PDF;
+- **Objetos do ambiente**: geladeira, fogão, máquina de lavar, sofá, poltrona, mesa, cadeira, TV, tapete e planta
+  para compor o cômodo. Eles aparecem na planta, no 3D e nas imagens, mas não entram no corte, compras ou orçamento.
+
+Templates: balcão inferior, armário aéreo, guarda-roupa modular, criado-mudo, cômoda, estante, rack de TV,
+mesa de trabalho, escrivaninha, cama (calculada pelo tamanho do colchão, com estrado de ripas ou chapa) e móvel livre. Em cada vão é possível
 combinar gavetas e porta, com o gaveteiro em cima ou embaixo.
 
 ## Como rodar

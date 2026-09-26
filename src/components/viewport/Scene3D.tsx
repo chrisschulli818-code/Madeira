@@ -118,7 +118,7 @@ function PieceMesh({
   onGrabHover: (over: boolean) => void;
 }) {
   const controls = useThree((s) => s.controls) as ControlsLike;
-  const color = hovered ? HIGHLIGHT_COLOR : selected ? SELECT_COLOR : MATERIAL_COLORS[piece.material];
+  const color = hovered ? HIGHLIGHT_COLOR : selected ? SELECT_COLOR : (piece.color ?? MATERIAL_COLORS[piece.material]);
   return (
     <mesh
       position={[(box.x + box.w / 2) * MM + offset[0], (box.y + box.h / 2) * MM + offset[1], (box.z + box.d / 2) * MM + offset[2]]}

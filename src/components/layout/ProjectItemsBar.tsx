@@ -2,7 +2,7 @@
  * Barra com os móveis do projeto: selecionar, duplicar, remover e adicionar novos.
  */
 import type { ReactNode } from 'react';
-import { Archive, Bookmark, Copy, DoorClosed, PanelTop, PencilRuler, Plus, Table2, Trash2 } from 'lucide-react';
+import { Archive, BedDouble, Bookmark, Copy, DoorClosed, Laptop, Layers3, Library, PanelTop, PencilRuler, Plus, Sofa, SquareStack, Table2, Trash2, Tv } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
 import { TEMPLATE_LIST, TEMPLATES } from '@/engine/templates';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,13 @@ export const TEMPLATE_ICONS: Record<TemplateId, ReactNode> = {
   wardrobe: <DoorClosed />,
   workbench: <Table2 />,
   custom: <PencilRuler />,
+  nightstand: <SquareStack />,
+  dresser: <Layers3 />,
+  bookshelf: <Library />,
+  'tv-rack': <Tv />,
+  desk: <Laptop />,
+  bed: <BedDouble />,
+  prop: <Sofa />,
 };
 
 function AddItemMenu() {

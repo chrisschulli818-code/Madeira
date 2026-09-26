@@ -5,6 +5,7 @@ import { computeBudget, DEFAULT_PRICES } from '../budgetEngine';
 import { defaultItemPrice, defaultSheetPrice } from '../pricing';
 import { createItem, DEFAULT_MATERIALS, DEFAULT_SERVICES, DEFAULT_SHEET, parseProjectFile, serializeProject } from '../projectFile';
 import { migrateState } from '@/store/projectStore';
+import { isCarcassItem } from '../templates';
 import { DEFAULT_ROOM } from '../roomEngine';
 import type { ProjectItem } from '@/types/woodcraft';
 
@@ -137,7 +138,7 @@ describe('arquivo de projeto', () => {
     const [item] = parsed.data.items;
     expect(parsed.data.items).toHaveLength(1);
     expect(item!.templateId).toBe('base-cabinet');
-    if (item!.templateId === 'workbench' || item!.templateId === 'custom') return;
+    if (!isCarcassItem(item!)) return;
     expect(item!.params.width).toBe(1200);
     expect(item!.params.height).toBe(870);
     expect(item!.params.assembly).toBe('screw');

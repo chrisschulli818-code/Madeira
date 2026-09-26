@@ -4,6 +4,7 @@ import { useResults } from '@/hooks/ProjectResults';
 import { TEMPLATES } from '@/engine/templates';
 import { describeParams } from '@/lib/specs';
 import { slugify } from '@/lib/utils';
+import { producible } from '@/engine/projectEngine';
 
 /**
  * Gera e baixa o relatório PDF do projeto.
@@ -13,6 +14,7 @@ export function useExportPdf() {
   const results = useResults();
   const projectName = useProjectStore((s) => s.projectName);
   const room = useProjectStore((s) => s.room);
+  const snapshots = useProjectStore((s) => s.snapshots);
   const [exporting, setExporting] = useState(false);
 
   const exportPdf = async () => {
@@ -25,7 +27,9 @@ export function useExportPdf() {
         date: new Date(),
         room,
         placements: results.placements,
-        items: results.items.map(({ item, model }) => ({
+        images: snapshots,
+        // Objetos do ambiente (sofá, geladeira...) não são produzidos: ficam só na planta e nas imagens.
+        items: producible(results.items).map(({ item, model }) => ({
           name: item.name,
           templateName: TEMPLATES[item.templateId].name,
           quantity: item.quantity,

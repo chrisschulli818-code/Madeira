@@ -7,4 +7,11 @@ export const FURNITURE_COLORS: Record<TemplateId, string> = {
   wardrobe: '#a3886b',
   workbench: '#b9a36b',
   custom: '#9fb98f',
+  nightstand: '#c98f5a',
+  dresser: '#c08457',
+  bookshelf: '#b9956b',
+  'tv-rack': '#a57a55',
+  desk: '#b9a36b',
+  bed: '#9d8872',
+  prop: '#b8bcc4',
 };

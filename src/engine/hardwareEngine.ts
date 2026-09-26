@@ -346,7 +346,7 @@ export function computeHardware(
       application: 'Trilho/suspensores na parede',
     });
   }
-  if (model.templateId === 'wardrobe' || model.templateId === 'base-cabinet') {
+  if (['wardrobe', 'base-cabinet', 'bookshelf', 'dresser'].includes(model.templateId)) {
     items.add({
       category: 'ferragem',
       name: 'Cantoneira L',
@@ -413,6 +413,29 @@ export function computeHardware(
       unit: 'un',
       application: 'Pés da mesa',
     });
+  }
+
+  // --- Cama: ferragens de encaixe e sarrafos ------------------------------------------
+  if (model.templateId === 'bed') {
+    items.add({
+      category: 'ferragem',
+      name: 'Ferragem de encaixe para cama',
+      specification: 'Par macho/fêmea para lateral × cabeceira/peseira',
+      quantity: 4,
+      unit: 'par',
+      application: 'Laterais encaixam e desencaixam sem ferramenta (facilita montar e mudar)',
+    });
+    const cleat = model.pieces.find((p) => p.role === 'cleat');
+    if (cleat) {
+      items.add({
+        category: 'fixacao',
+        name: 'Parafuso chipboard cabeça chata',
+        specification: '4,0 × 30 mm',
+        quantity: withSpare(cleat.quantity * Math.ceil(cleat.length / 200)),
+        unit: 'un',
+        application: 'Sarrafos do estrado nas laterais (1 a cada 200 mm, com cola)',
+      });
+    }
   }
 
   // --- Consumíveis (fita de borda, lixa) ------------------------------------------------

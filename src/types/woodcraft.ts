@@ -14,9 +14,15 @@
 // ---------------------------------------------------------------------------
 
 /** Templates de móveis de caixa (laterais, base, tampo, vãos). */
-export type CarcassTemplateId = 'base-cabinet' | 'wall-cabinet' | 'wardrobe';
-/** `custom` = móvel livre, montado peça por peça a partir do zero. */
-export type TemplateId = CarcassTemplateId | 'workbench' | 'custom';
+export type CarcassTemplateId = 'base-cabinet' | 'wall-cabinet' | 'wardrobe' | 'nightstand' | 'dresser' | 'bookshelf' | 'tv-rack';
+/** Mesas: tampo sobre painéis laterais. */
+export type WorkbenchTemplateId = 'workbench' | 'desk';
+/**
+ * `custom` = móvel livre, montado peça por peça a partir do zero.
+ * `bed` = cama de MDF (cabeceira, laterais, estrado).
+ * `prop` = objeto do ambiente (eletrodoméstico, sofá, mesa...) — só para compor o cômodo, fora da produção.
+ */
+export type TemplateId = CarcassTemplateId | WorkbenchTemplateId | 'custom' | 'bed' | 'prop';
 
 /** Tipo de montagem estrutural da caixa. */
 export type AssemblyMethod = 'screw' | 'minifix' | 'dowel';
@@ -162,11 +168,51 @@ export interface CustomParams {
 }
 
 /** Descrição de um template paramétrico para a interface. */
-export interface CabinetTemplate<P = CabinetParams | WorkbenchParams | CustomParams> {
+/** Cama de MDF: cabeceira e peseira até o chão, laterais entre elas, sarrafos e estrado. */
+export interface BedParams {
+  /** Medidas do colchão (a cama é calculada em volta dele). */
+  mattressWidth: number;
+  mattressLength: number;
+  mattressHeight: number;
+  /** Altura do estrado (topo das ripas) em relação ao piso. */
+  deckHeight: number;
+  /** Altura das laterais (saia). */
+  railHeight: number;
+  headboardHeight: number;
+  footboard: boolean;
+  footboardHeight: number;
+  thickness: number;
+  /** Estrado de ripas (MDF) ou chapa inteira. */
+  deck: 'ripas' | 'chapa';
+  assembly: AssemblyMethod;
+}
+
+export type PropType =
+  | 'geladeira'
+  | 'fogao'
+  | 'lavadora'
+  | 'sofa'
+  | 'poltrona'
+  | 'mesa'
+  | 'cadeira'
+  | 'tv'
+  | 'tapete'
+  | 'planta';
+
+/** Objeto do ambiente (não entra na lista de corte, compras nem orçamento). */
+export interface PropParams {
+  type: PropType;
+  width: number;
+  height: number;
+  depth: number;
+  color: string;
+}
+
+export interface CabinetTemplate<P = CabinetParams | WorkbenchParams | CustomParams | BedParams | PropParams> {
   id: TemplateId;
   name: string;
   description: string;
-  kind: 'carcass' | 'workbench' | 'custom';
+  kind: 'carcass' | 'workbench' | 'custom' | 'bed' | 'prop';
   defaults: P;
   /** Limites sugeridos para sliders (mm). */
   limits: {
@@ -198,7 +244,13 @@ export type PieceRole =
   | 'drawer-bottom'
   | 'worktop'
   | 'leg-panel'
-  | 'apron';
+  | 'apron'
+  | 'headboard'
+  | 'footboard'
+  | 'bed-rail'
+  | 'cleat'
+  | 'slat'
+  | 'decor';
 
 /** Grupo de material — cada grupo vira um conjunto de chapas no plano de corte. */
 export type MaterialRole = 'carcass' | 'front' | 'back' | 'drawer';
@@ -245,6 +297,10 @@ export interface CutPiece {
   notes?: string;
   /** Móvel livre: ids dos painéis que geraram esta linha (para ligar lista, 3D e editor). */
   sourceIds?: string[];
+  /** Peça só visual (colchão, objetos do ambiente): fora da lista de corte, compras e montagem. */
+  decorative?: boolean;
+  /** Cor própria para o 3D (peças decorativas). */
+  color?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -444,8 +500,10 @@ interface ProjectItemBase {
 
 /** Um móvel do projeto: template + parâmetros próprios. */
 export type ProjectItem =
-  | (ProjectItemBase & { templateId: 'workbench'; params: WorkbenchParams })
+  | (ProjectItemBase & { templateId: WorkbenchTemplateId; params: WorkbenchParams })
   | (ProjectItemBase & { templateId: 'custom'; params: CustomParams })
+  | (ProjectItemBase & { templateId: 'bed'; params: BedParams })
+  | (ProjectItemBase & { templateId: 'prop'; params: PropParams })
   | (ProjectItemBase & { templateId: CarcassTemplateId; params: CabinetParams });
 
 /** Linha da lista de corte do projeto (peça de um móvel, já multiplicada pela quantidade de móveis). */
@@ -540,6 +598,9 @@ export interface RoomSettings {
   depth: number;
   height: number;
   openings: RoomOpening[];
+  /** Cores das paredes e do piso nas imagens 3D. */
+  wallColor?: string;
+  floorColor?: string;
 }
 
 /** Rotação do móvel vista de cima. 0 = costas para a parede do fundo, frente para a frente do cômodo. */

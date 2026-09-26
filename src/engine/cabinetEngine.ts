@@ -17,8 +17,11 @@
  */
 import type {
   AssembledModel,
+  BedParams,
   CarcassTemplateId,
   CustomParams,
+  PropParams,
+  WorkbenchTemplateId,
   Box3D,
   CabinetParams,
   CutPiece,
@@ -54,6 +57,8 @@ import {
   SLIDE_REAR_CLEARANCE,
 } from './constants';
 import { buildCustom } from './customEngine';
+import { buildBed } from './bedEngine';
+import { buildProp } from './propEngine';
 
 // ---------------------------------------------------------------------------
 // Utilidades
@@ -608,7 +613,7 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
 // ---------------------------------------------------------------------------
 
 /** Calcula as peças de uma mesa com tampo sobre dois painéis laterais. */
-export function buildWorkbench(input: WorkbenchParams): AssembledModel {
+export function buildWorkbench(input: WorkbenchParams, templateId: WorkbenchTemplateId = 'workbench'): AssembledModel {
   const p: WorkbenchParams = {
     ...input,
     width: clamp(input.width, 300, 4000),
@@ -684,7 +689,7 @@ export function buildWorkbench(input: WorkbenchParams): AssembledModel {
   );
 
   return {
-    templateId: 'workbench',
+    templateId,
     overall: { width: W, height: H, depth: D },
     pieces: out.pieces(),
     doors: [],
@@ -705,17 +710,24 @@ export function buildWorkbench(input: WorkbenchParams): AssembledModel {
 // ---------------------------------------------------------------------------
 
 export type ModelInput =
-  | { templateId: 'workbench'; params: WorkbenchParams }
+  | { templateId: WorkbenchTemplateId; params: WorkbenchParams }
   | { templateId: 'custom'; params: CustomParams }
+  | { templateId: 'bed'; params: BedParams }
+  | { templateId: 'prop'; params: PropParams }
   | { templateId: CarcassTemplateId; params: CabinetParams };
 
 /** Monta o modelo do móvel a partir do template selecionado. */
 export function buildModel(input: ModelInput): AssembledModel {
   switch (input.templateId) {
     case 'workbench':
-      return buildWorkbench(input.params);
+    case 'desk':
+      return buildWorkbench(input.params, input.templateId);
     case 'custom':
       return buildCustom(input.params);
+    case 'bed':
+      return buildBed(input.params);
+    case 'prop':
+      return buildProp(input.params);
     default:
       return buildCarcass(input.templateId, input.params);
   }

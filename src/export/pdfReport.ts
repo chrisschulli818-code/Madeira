@@ -63,6 +63,8 @@ export interface PdfReportData {
   /** Ambiente (opcional): cômodo e posições dos móveis. */
   room?: RoomSettings;
   placements?: ResolvedPlacement[];
+  /** Imagens do ambiente montado (PNG em data URL), geradas a partir de pontos de vista. */
+  images?: Array<{ label: string; dataUrl: string; width: number; height: number }>;
   hardware: HardwareItem[];
   tools: ToolRequirement[];
   materials: Record<MaterialRole, MaterialSpec>;
@@ -245,7 +247,7 @@ function drawElevation(
   const items: Array<{ box: Box3D; color: string }> = [];
   for (const piece of model.pieces) {
     if (!opts.showFronts && FRONT_ROLES.has(piece.role)) continue;
-    for (const box of piece.instances) items.push({ box, color: MATERIAL_COLORS[piece.material] });
+    for (const box of piece.instances) items.push({ box, color: piece.color ?? MATERIAL_COLORS[piece.material] });
   }
   items.sort((a, b) => (view === 'front' ? a.box.z + a.box.d - (b.box.z + b.box.d) : a.box.x + a.box.w - (b.box.x + b.box.w)));
 
@@ -350,7 +352,7 @@ const BUDGET_LABELS: Record<BudgetCategory, string> = {
 };
 
 /** Planta do ambiente: paredes, portas, janelas e móveis numerados, com tabela de posições. */
-function writeRoom(w: Writer, n: number, room: RoomSettings, placements: ResolvedPlacement[]) {
+function writeRoom(w: Writer, n: number, room: RoomSettings, placements: ResolvedPlacement[], images: NonNullable<PdfReportData['images']> = []) {
   const { doc } = w;
   w.section(n, `Ambiente: ${room.name}`, { newPage: true });
   w.paragraph(`Cômodo de ${room.width} × ${room.depth} mm (medidas internas), pé-direito de ${room.height} mm. Vista de cima; a parede do fundo fica no topo.`);
@@ -448,6 +450,26 @@ function writeRoom(w: Writer, n: number, room: RoomSettings, placements: Resolve
       const ia = placements.indexOf(c.a) + 1;
       const ib = placements.indexOf(c.b) + 1;
       w.paragraph(`• #${ia} ${c.a.name} + #${ib} ${c.b.name}: ${c.connectors} parafusos de união`, 8.5, INK);
+    }
+  }
+  if (images.length) {
+    w.subtitle('Imagens do ambiente');
+    for (const img of images) {
+      const ratio = img.height / Math.max(1, img.width);
+      let iw = CONTENT_W;
+      let ih = iw * ratio;
+      if (ih > 115) {
+        ih = 115;
+        iw = ih / ratio;
+      }
+      w.ensure(ih + 10);
+      const { doc } = w;
+      doc.addImage(img.dataUrl, 'PNG', M + (CONTENT_W - iw) / 2, w.y, iw, ih, undefined, 'FAST');
+      doc.setDrawColor(210, 204, 196);
+      doc.rect(M + (CONTENT_W - iw) / 2, w.y, iw, ih);
+      w.y += ih + 1;
+      w.paragraph(img.label, 8, SUBTLE);
+      w.y += 2;
     }
   }
 }
@@ -744,7 +766,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
   );
 
   // --- 2. Móveis ----------------------------------------------------------------------
-  if (data.room) writeRoom(w, 2, data.room, data.placements ?? []);
+  if (data.room) writeRoom(w, 2, data.room, data.placements ?? [], data.images);
   items.forEach((it, i) => writeItem(w, data.room ? 3 : 2, it, i, items.length, numberOf));
 
   // --- 3. Lista de corte ---------------------------------------------------------------

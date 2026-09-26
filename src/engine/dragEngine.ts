@@ -15,6 +15,7 @@
  */
 import type { AssembledModel, CabinetParams, CustomPanel, CustomParams, DragHandle, ProjectItem } from '@/types/woodcraft';
 import { panelBox } from './customEngine';
+import { isCarcassItem } from './templates';
 
 /** Passo da furação de pinos de prateleira (sistema 32). */
 export const SHELF_GRID = 32;
@@ -230,7 +231,7 @@ export function applyDrag(
     const r = dragCustomPanel(item.params, ref, { x: origin.x + delta.dx, y: origin.y + delta.dy, w: origin.w, h: origin.h });
     return r && { item: { ...item, params: r.params }, ref: r.ref };
   }
-  if (item.templateId === 'workbench') return null;
+  if (!isCarcassItem(item)) return null;
   const t: DragTarget = { x: startBox.x + delta.dx, y: startBox.y + delta.dy, w: startBox.w, h: startBox.h };
   const r =
     ref.kind === 'shelf'

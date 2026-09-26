@@ -10,6 +10,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
+  BedParams,
+  PropParams,
+  PropType,
   LibraryEntry,
   FurniturePlacement,
   RoomOpening,
@@ -27,7 +30,8 @@ import type {
   TemplateId,
   WorkbenchParams,
 } from '@/types/woodcraft';
-import { defaultParamsFor, makeColumn, TEMPLATES } from '@/engine/templates';
+import { defaultItemParams, isCarcassItem, isWorkbenchItem, makeColumn, TEMPLATES } from '@/engine/templates';
+import { propInfo } from '@/engine/propEngine';
 import { DEFAULT_PRICES } from '@/engine/budgetEngine';
 import { createPanel, newPanelId, type PanelPreset } from '@/engine/customEngine';
 import { DEFAULT_ROOM, newOpeningId } from '@/engine/roomEngine';
@@ -43,6 +47,16 @@ import {
 
 export { DEFAULT_MATERIALS, DEFAULT_SHEET };
 export type { CarcassTemplateId } from '@/types/woodcraft';
+
+/** Imagem do ambiente montado, gerada a partir de um ponto de vista. */
+export interface RoomSnapshot {
+  id: string;
+  label: string;
+  /** PNG em data URL. */
+  dataUrl: string;
+  width: number;
+  height: number;
+}
 
 export interface ProjectState extends ProjectData {
   activeItemId: string;
@@ -60,6 +74,10 @@ export interface ProjectState extends ProjectData {
   setViewMode: (mode: 'furniture' | 'room') => void;
   selectedPlacement: string | null;
   selectPlacement: (key: string | null) => void;
+  /** Imagens geradas do ambiente (só nesta sessão; entram no PDF). */
+  snapshots: RoomSnapshot[];
+  addSnapshot: (snap: Omit<RoomSnapshot, 'id'>) => void;
+  removeSnapshot: (id: string) => void;
   // Ambiente
   setRoom: (patch: Partial<Omit<RoomSettings, 'openings'>>) => void;
   addOpening: (kind: RoomOpening['kind']) => void;
@@ -94,6 +112,10 @@ export interface ProjectState extends ProjectData {
   addColumn: () => void;
   removeColumn: (columnId: string) => void;
   updateWorkbench: (patch: Partial<WorkbenchParams>) => void;
+  updateBed: (patch: Partial<BedParams>) => void;
+  updateProp: (patch: Partial<PropParams>) => void;
+  /** Coloca um objeto do ambiente (geladeira, sofá...) no projeto; devolve o id. */
+  addProp: (type: PropType) => string;
   resetActiveItem: () => void;
   // Móvel livre (painéis)
   /** Cria um painel no móvel livre ativo e devolve o painel criado. */
@@ -157,7 +179,7 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => ({ items: s.items.map((i) => (i.id === s.activeItemId ? fn(i) : i)) }));
       /** Aplica uma alteração nos parâmetros do móvel ativo, se for de caixa. */
       const patchCabinet = (fn: (p: CabinetParams) => CabinetParams) =>
-        patchActive((i) => (i.templateId === 'workbench' || i.templateId === 'custom' ? i : { ...i, params: fn(i.params) }));
+        patchActive((i) => (isCarcassItem(i) ? { ...i, params: fn(i.params) } : i));
       /** Aplica uma alteração nos painéis do móvel livre ativo. */
       const patchCustom = (fn: (p: CustomParams) => CustomParams) =>
         patchActive((i) => (i.templateId === 'custom' ? { ...i, params: fn(i.params) } : i));
@@ -170,6 +192,9 @@ export const useProjectStore = create<ProjectState>()(
         expanded: false,
         viewMode: 'furniture',
         selectedPlacement: null,
+        snapshots: [],
+        addSnapshot: (snap) => set((st) => ({ snapshots: [...st.snapshots, { ...snap, id: `img-${Date.now().toString(36)}-${st.snapshots.length}` }] })),
+        removeSnapshot: (id) => set((st) => ({ snapshots: st.snapshots.filter((x) => x.id !== id) })),
 
         setViewMode: (viewMode) => set({ viewMode, selectedPieceId: null, hoveredPieceId: null }),
         // Selecionar um móvel no ambiente também o torna o móvel ativo (para editar ali mesmo).
@@ -298,18 +323,31 @@ export const useProjectStore = create<ProjectState>()(
         addColumn: () => patchCabinet((p) => ({ ...p, columns: [...p.columns, makeColumn({ doors: 1, shelves: 1 })] })),
         removeColumn: (columnId) =>
           patchCabinet((p) => (p.columns.length <= 1 ? p : { ...p, columns: p.columns.filter((c) => c.id !== columnId) })),
-        updateWorkbench: (patch) =>
-          patchActive((i) => (i.templateId === 'workbench' ? { ...i, params: { ...i.params, ...patch } } : i)),
+        updateWorkbench: (patch) => patchActive((i) => (isWorkbenchItem(i) ? { ...i, params: { ...i.params, ...patch } } : i)),
+        updateBed: (patch) => patchActive((i) => (i.templateId === 'bed' ? { ...i, params: { ...i.params, ...patch } } : i)),
+        updateProp: (patch) => patchActive((i) => (i.templateId === 'prop' ? { ...i, params: { ...i.params, ...patch } } : i)),
+        addProp: (type) => {
+          const info = propInfo(type);
+          let id = '';
+          set((s) => {
+            const item = { ...createItem('prop', uniqueName(s.items, info.label)), params: { type, width: info.width, height: info.height, depth: info.depth, color: info.color } } as ProjectItem;
+            id = item.id;
+            return {
+              items: [...s.items, item],
+              activeItemId: item.id,
+              selectedPlacement: s.viewMode === 'room' ? `${item.id}#0` : s.selectedPlacement,
+            };
+          });
+          return id;
+        },
         resetActiveItem: () =>
           patchActive((i) => {
-            switch (i.templateId) {
-              case 'workbench':
-                return { ...i, params: defaultParamsFor('workbench') };
-              case 'custom':
-                return { ...i, params: defaultParamsFor('custom') };
-              default:
-                return { ...i, params: defaultParamsFor(i.templateId) };
+            // Objetos mantêm o tipo; voltam às medidas padrão do catálogo.
+            if (i.templateId === 'prop') {
+              const info = propInfo(i.params.type);
+              return { ...i, params: { type: info.type, width: info.width, height: info.height, depth: info.depth, color: info.color } };
             }
+            return { ...i, ...defaultItemParams(i.templateId) } as ProjectItem;
           }),
 
         addPanel: (preset) => {
@@ -362,7 +400,7 @@ export const useProjectStore = create<ProjectState>()(
       name: 'woodcraft-planner:v1',
       version: 2,
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ selectedPieceId: _s, hoveredPieceId: _h, expanded: _e, viewMode: _v, selectedPlacement: _p, ...rest }) => rest,
+      partialize: ({ selectedPieceId: _s, hoveredPieceId: _h, expanded: _e, viewMode: _v, selectedPlacement: _p, snapshots: _i, ...rest }) => rest,
       migrate: (persisted, version) => migrateState(persisted, version) as unknown as ProjectState,
     },
   ),
