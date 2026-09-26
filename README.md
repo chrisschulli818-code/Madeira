@@ -39,9 +39,9 @@ O arquivo `render.yaml` já configura um **Static Site** gratuito:
 
 Cada push na `main` gera um novo deploy automaticamente.
 
-> Não use `yarn start` no Render: ele abre o servidor de desenvolvimento, que estoura a memória do plano gratuito.
-> Se preferir um **Web Service** em vez de Static Site, configure:
-> **Build Command** `yarn install && yarn build` · **Start Command** `yarn serve`.
+> Também funciona como **Web Service**: **Build Command** `yarn install && yarn build` e **Start Command** `yarn start`.
+> No Render (variável `RENDER=true`) o `yarn start` serve o build compilado em vez do servidor de desenvolvimento,
+> ficando bem abaixo do limite de 512 MB do plano gratuito.
 
 ## Stack
 
