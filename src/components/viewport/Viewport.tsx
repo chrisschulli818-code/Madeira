@@ -24,7 +24,8 @@ function Loading() {
 
 /** Viewport com abas 3D / frontal / lateral e realce sincronizado com a lista de corte. */
 export function Viewport() {
-  const { model } = useResults();
+  const { model, joinery } = useResults();
+  const [showJoinery, setShowJoinery] = useState(false);
   const hoveredId = useProjectStore((s) => s.hoveredPieceId);
   const selectedId = useProjectStore((s) => s.selectedPieceId);
   const hoverPiece = useProjectStore((s) => s.hoverPiece);
@@ -56,6 +57,9 @@ export function Viewport() {
           <label className="flex items-center gap-2 text-xs text-subtle">
             <Switch checked={showFronts} onCheckedChange={setShowFronts} aria-label="Mostrar frentes" /> Frentes
           </label>
+          <label className="flex items-center gap-2 text-xs text-subtle" title="Mostra no 3D os furos de parafuso, minifix, cavilhas, dobradiças e pinos">
+            <Switch checked={showJoinery} onCheckedChange={setShowJoinery} aria-label="Mostrar encaixes" /> Encaixes
+          </label>
           <label className="flex w-40 items-center gap-2 text-xs text-subtle">
             Explodir
             <Slider aria-label="Vista explodida" value={[explode]} min={0} max={1} step={0.05} onValueChange={([v]) => setExplode(v ?? 0)} />
@@ -73,7 +77,7 @@ export function Viewport() {
         <div className="relative min-h-0 flex-1">
           <TabsContent value="3d" className="absolute inset-0">
             <Suspense fallback={<Loading />}>
-              <Scene3D {...common} explode={explode} drag={drag} />
+              <Scene3D {...common} explode={explode} drag={drag} markers={showJoinery ? joinery.ops : undefined} />
             </Suspense>
           </TabsContent>
           <TabsContent value="front" className="absolute inset-0 p-4">

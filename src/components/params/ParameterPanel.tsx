@@ -2,7 +2,7 @@
  * Painel lateral de parâmetros: dimensões, chapas, base, fundo, frentes, montagem, vãos,
  * materiais e configuração da chapa para o plano de corte.
  */
-import { Box, Columns3, Hammer, Layers, PanelBottom, RotateCcw, Ruler, Scissors, SquareStack } from 'lucide-react';
+import { BookmarkCheck, BookmarkPlus, Box, Columns3, Hammer, Layers, PanelBottom, RotateCcw, Ruler, Scissors, SquareStack } from 'lucide-react';
 import { useProjectStore, useActiveItem } from '@/store/projectStore';
 import { TEMPLATES } from '@/engine/templates';
 import { Button } from '@/components/ui/button';
@@ -234,50 +234,74 @@ function MaterialsForm() {
   );
 }
 
-export function ParameterPanel() {
+/** Cabeçalho do móvel ativo: nome, tipo, quantidade, salvar em "Meus móveis" e restaurar padrão. */
+export function ItemEditorHeader() {
   const item = useActiveItem();
   const updateItem = useProjectStore((s) => s.updateItem);
   const resetActiveItem = useProjectStore((s) => s.resetActiveItem);
+  const saveToLibrary = useProjectStore((s) => s.saveToLibrary);
+  const inLibrary = useProjectStore((s) => s.library.some((e) => e.item.name === item.name));
   const template = TEMPLATES[item.templateId];
 
   return (
-    <aside className="flex flex-col border-b border-border bg-surface lg:h-full lg:overflow-hidden lg:border-b-0 lg:border-r">
-      <div className="space-y-2 border-b border-border px-4 py-3">
-        <div className="flex items-start gap-3">
-          <Box className="mt-1.5 size-5 shrink-0 text-primary" />
-          <div className="min-w-0 flex-1">
-            <input
-              value={item.name}
-              onChange={(e) => updateItem(item.id, { name: e.target.value })}
-              aria-label="Nome do móvel"
-              className="w-full rounded border border-transparent bg-transparent px-1 text-sm font-semibold hover:border-border focus:border-primary focus:outline-none"
-            />
-            <p className="px-1 text-xs leading-snug text-subtle">
-              {template.name} — {template.description}
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            title={item.templateId === 'custom' ? 'Apagar todas as peças (voltar à tela em branco)' : 'Restaurar medidas padrão deste móvel'}
-            aria-label="Restaurar padrão"
-            onClick={() => (item.templateId !== 'custom' || confirm('Apagar todas as peças deste móvel?')) && resetActiveItem()}
-          >
-            <RotateCcw />
-          </Button>
+    <div className="space-y-2 border-b border-border px-4 py-3">
+      <div className="flex items-start gap-2">
+        <Box className="mt-1.5 size-5 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <input
+            value={item.name}
+            onChange={(e) => updateItem(item.id, { name: e.target.value })}
+            aria-label="Nome do móvel"
+            className="w-full rounded border border-transparent bg-transparent px-1 text-sm font-semibold hover:border-border focus:border-primary focus:outline-none"
+          />
+          <p className="px-1 text-xs leading-snug text-subtle">
+            {template.name} — {template.description}
+          </p>
         </div>
-        <FieldRow label="Quantidade de móveis iguais" hint={item.quantity > 1 ? 'A lista de corte, o plano de corte e as compras já consideram todos.' : undefined}>
-          <Stepper value={item.quantity} min={1} max={50} onChange={(quantity) => updateItem(item.id, { quantity })} aria-label="Quantidade" />
-        </FieldRow>
+        <Button
+          variant="ghost"
+          size="icon"
+          title={inLibrary ? 'Atualizar em "Meus móveis"' : 'Salvar em "Meus móveis" para usar em outros ambientes'}
+          aria-label="Salvar em Meus móveis"
+          onClick={() => saveToLibrary(item.id)}
+        >
+          {inLibrary ? <BookmarkCheck className="text-accent" /> : <BookmarkPlus />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          title={item.templateId === 'custom' ? 'Apagar todas as peças (voltar à tela em branco)' : 'Restaurar medidas padrão deste móvel'}
+          aria-label="Restaurar padrão"
+          onClick={() => (item.templateId !== 'custom' || confirm('Apagar todas as peças deste móvel?')) && resetActiveItem()}
+        >
+          <RotateCcw />
+        </Button>
       </div>
+      <FieldRow label="Quantidade de móveis iguais" hint={item.quantity > 1 ? 'A lista de corte, o plano de corte e as compras já consideram todos.' : undefined}>
+        <Stepper value={item.quantity} min={1} max={50} onChange={(quantity) => updateItem(item.id, { quantity })} aria-label="Quantidade" />
+      </FieldRow>
+    </div>
+  );
+}
+
+/** Formulário de medidas e peças do móvel ativo (varia conforme o tipo). */
+export function ItemEditorForms() {
+  const item = useActiveItem();
+  return item.templateId === 'workbench' ? (
+    <WorkbenchForm key={item.id} params={item.params} />
+  ) : item.templateId === 'custom' ? (
+    <CustomPanelEditor key={item.id} params={item.params} itemId={item.id} />
+  ) : (
+    <CabinetForm key={item.id} params={item.params} templateId={item.templateId} />
+  );
+}
+
+export function ParameterPanel() {
+  return (
+    <aside className="flex flex-col border-b border-border bg-surface lg:h-full lg:overflow-hidden lg:border-b-0 lg:border-r">
+      <ItemEditorHeader />
       <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        {item.templateId === 'workbench' ? (
-          <WorkbenchForm key={item.id} params={item.params} />
-        ) : item.templateId === 'custom' ? (
-          <CustomPanelEditor key={item.id} params={item.params} itemId={item.id} />
-        ) : (
-          <CabinetForm key={item.id} params={item.params} templateId={item.templateId} />
-        )}
+        <ItemEditorForms />
         <MaterialsForm />
       </div>
     </aside>

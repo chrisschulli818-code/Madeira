@@ -2,9 +2,9 @@
  * Barra com os móveis do projeto: selecionar, duplicar, remover e adicionar novos.
  */
 import type { ReactNode } from 'react';
-import { Archive, Copy, DoorClosed, PanelTop, PencilRuler, Plus, Table2, Trash2 } from 'lucide-react';
+import { Archive, Bookmark, Copy, DoorClosed, PanelTop, PencilRuler, Plus, Table2, Trash2 } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
-import { TEMPLATE_LIST } from '@/engine/templates';
+import { TEMPLATE_LIST, TEMPLATES } from '@/engine/templates';
 import { Button } from '@/components/ui/button';
 import { Dropdown, MenuItem } from '@/components/ui/dropdown';
 import { Segmented } from '@/components/params/fields';
@@ -21,6 +21,8 @@ export const TEMPLATE_ICONS: Record<TemplateId, ReactNode> = {
 
 function AddItemMenu() {
   const addItem = useProjectStore((s) => s.addItem);
+  const library = useProjectStore((s) => s.library);
+  const insertItems = useProjectStore((s) => s.insertItems);
   return (
     <Dropdown
       align="right"
@@ -31,20 +33,40 @@ function AddItemMenu() {
         </Button>
       )}
     >
-      {(close) =>
-        TEMPLATE_LIST.map((t) => (
-          <MenuItem
-            key={t.id}
-            icon={TEMPLATE_ICONS[t.id]}
-            title={t.name}
-            description={t.description}
-            onSelect={() => {
-              addItem(t.id);
-              close();
-            }}
-          />
-        ))
-      }
+      {(close) => (
+        <div className="max-h-[70vh] overflow-y-auto">
+          {library.length > 0 && (
+            <>
+              <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-subtle">Meus móveis</div>
+              {library.map((e) => (
+                <MenuItem
+                  key={e.id}
+                  icon={<Bookmark />}
+                  title={e.item.name}
+                  description={TEMPLATES[e.item.templateId].name}
+                  onSelect={() => {
+                    insertItems([e.item]);
+                    close();
+                  }}
+                />
+              ))}
+              <div className="px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-subtle">Novo a partir de modelo</div>
+            </>
+          )}
+          {TEMPLATE_LIST.map((t) => (
+            <MenuItem
+              key={t.id}
+              icon={TEMPLATE_ICONS[t.id]}
+              title={t.name}
+              description={t.description}
+              onSelect={() => {
+                addItem(t.id);
+                close();
+              }}
+            />
+          ))}
+        </div>
+      )}
     </Dropdown>
   );
 }

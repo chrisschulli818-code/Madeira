@@ -19,6 +19,8 @@
 import { jsPDF } from 'jspdf';
 import { autoTable, type UserOptions } from 'jspdf-autotable';
 import type {
+  CutPiece,
+  MachiningOp,
   AssembledModel,
   Budget,
   BudgetCategory,
@@ -38,6 +40,8 @@ import type {
 import { edgeBandingLabel, edgeBandingMeters, pieceArea } from '@/engine/cabinetEngine';
 import { edgeBandWidthFor, hingesForDoorHeight } from '@/engine/hardwareEngine';
 import { MATERIAL_COLORS } from '@/lib/pieceColors';
+import { computeJoinery, instanceLetter, MACHINING_COLORS, MACHINING_LABELS, opsByPiece } from '@/engine/joineryEngine';
+import { moduleConnections } from '@/engine/roomEngine';
 
 /** Um móvel do projeto, com suas especificações e o modelo calculado. */
 export interface PdfItem {
@@ -432,10 +436,24 @@ function writeRoom(w: Writer, n: number, room: RoomSettings, placements: Resolve
     ]),
     columnStyles: { 0: { cellWidth: 8, halign: 'right' }, 6: { halign: 'right' } },
   });
+  const connections = moduleConnections(placements);
+  if (connections.length) {
+    w.subtitle('União dos módulos');
+    w.paragraph(
+      'Depois de posicionar e nivelar os módulos vizinhos, una-os pelas laterais encostadas com parafusos de união ' +
+        '(a 50 mm do topo e da base, na frente e atrás):',
+      8.5,
+    );
+    for (const c of connections) {
+      const ia = placements.indexOf(c.a) + 1;
+      const ib = placements.indexOf(c.b) + 1;
+      w.paragraph(`• #${ia} ${c.a.name} + #${ib} ${c.b.name}: ${c.connectors} parafusos de união`, 8.5, INK);
+    }
+  }
 }
 
 /** Página de um móvel: especificações, desenhos cotados e tabelas de frentes. */
-function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: number) {
+function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: number, numberOf: (pieceId: string) => number) {
   const { doc } = w;
   const { model } = item;
   const title = total > 1 ? `Móvel ${index + 1}: ${item.name}` : item.name;
@@ -533,6 +551,130 @@ function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: nu
       columnStyles: { 0: { cellWidth: 8, halign: 'right' } },
     });
   }
+  writeAssembly(w, model, numberOf);
+}
+
+/** Passo a passo de montagem e mapa de furação (desenhos + cotas) de um móvel. */
+function writeAssembly(w: Writer, model: AssembledModel, numberOf: (pieceId: string) => number) {
+  const { doc } = w;
+  const plan = computeJoinery(model);
+  w.newPage();
+  w.subtitle('Montagem passo a passo');
+  plan.steps.forEach((step, i) => {
+    w.ensure(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...INK);
+    doc.text(pdfText(`${i + 1}. ${step.title}`), M, w.y + 3.5);
+    w.y += 5;
+    w.paragraph(step.detail, 8.5);
+  });
+  if (!plan.ops.length) return;
+
+  const groups = opsByPiece(model, plan.ops);
+  w.subtitle(`Mapa de furação (${plan.ops.length} operações)`);
+  w.paragraph(
+    'Cotas em mm a partir do canto de referência (marca em L): u ao longo do comprimento, v ao longo da largura. ' +
+      'Círculo cheio = face A (lado esquerdo/fundo/baixo do móvel); anel = face B; losango = furo na borda; faixa = rasgo.',
+  );
+  // Legenda de cores
+  const kinds = [...new Set(plan.ops.map((o) => o.kind))];
+  let lx = M;
+  w.ensure(6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  for (const k of kinds) {
+    const label = pdfText(MACHINING_LABELS[k]);
+    const wLabel = doc.getTextWidth(label) + 7;
+    if (lx + wLabel > PAGE_W - M) {
+      lx = M;
+      w.y += 4.5;
+    }
+    doc.setFillColor(...hexToRgb(MACHINING_COLORS[k]));
+    doc.circle(lx + 1.2, w.y + 1.8, 1.2, 'F');
+    doc.setTextColor(...SUBTLE);
+    doc.text(label, lx + 3.4, w.y + 2.8);
+    lx += wLabel;
+  }
+  w.y += 7;
+
+  // Desenhos: duas peças por linha
+  const colW = (CONTENT_W - 6) / 2;
+  const drawH = 42;
+  for (let i = 0; i < groups.length; i += 2) {
+    w.ensure(drawH + 8);
+    [groups[i], groups[i + 1]].forEach((g, k) => {
+      if (!g) return;
+      const x = M + k * (colW + 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(...INK);
+      doc.text(pdfText(`#${numberOf(g.piece.id)}${instanceLetter(g.instance)} ${g.piece.name}`), x, w.y + 3);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...SUBTLE);
+      doc.text(`${g.piece.length} × ${g.piece.width} mm · ${g.ops.length} op.`, x + colW, w.y + 3, { align: 'right' });
+      drawPieceOps(doc, g.piece, g.ops, { x, y: w.y + 5, w: colW, h: drawH - 6 });
+    });
+    w.y += drawH + 2;
+  }
+
+  // Tabela de cotas
+  const surface = { 'face-a': 'Face A', 'face-b': 'Face B', borda: 'Borda' } as const;
+  w.table({
+    head: [['Peça', 'Operação', 'Onde', 'u', 'v', 'Ø × prof.']],
+    body: groups.flatMap((g) =>
+      g.ops.map((o) => [
+        `#${numberOf(g.piece.id)}${instanceLetter(g.instance)} ${g.piece.name}`,
+        MACHINING_LABELS[o.kind],
+        surface[o.surface],
+        String(o.u),
+        String(o.v),
+        o.kind === 'rasgo' ? `${o.diameter} × ${o.depth} (compr. ${o.length})` : `${o.diameter} × ${o.depth}`,
+      ]),
+    ),
+    styles: { fontSize: 7.2, cellPadding: 1 },
+    columnStyles: { 0: { cellWidth: 42 }, 3: { halign: 'right', cellWidth: 12 }, 4: { halign: 'right', cellWidth: 12 }, 5: { halign: 'right', cellWidth: 28 } },
+  });
+}
+
+/** Desenho da peça com os furos (mesma convenção do app). */
+function drawPieceOps(doc: jsPDF, piece: CutPiece, ops: MachiningOp[], area: { x: number; y: number; w: number; h: number }) {
+  const s = Math.min(area.w / piece.length, area.h / piece.width);
+  const ox = area.x + (area.w - piece.length * s) / 2;
+  const oy = area.y + (area.h - piece.width * s) / 2;
+  const X = (u: number) => ox + u * s;
+  const Y = (v: number) => oy + (piece.width - v) * s;
+  doc.setFillColor(246, 239, 228);
+  doc.setDrawColor(63, 54, 44);
+  doc.setLineWidth(0.2);
+  doc.rect(X(0), Y(piece.width), piece.length * s, piece.width * s, 'FD');
+  // Canto de referência
+  doc.setDrawColor(...PRIMARY);
+  doc.setLineWidth(0.6);
+  const m = Math.min(piece.length, piece.width) * s * 0.15;
+  doc.line(X(0), Y(0) - m, X(0), Y(0));
+  doc.line(X(0), Y(0), X(0) + m, Y(0));
+  for (const o of ops) {
+    const rgb = hexToRgb(MACHINING_COLORS[o.kind]);
+    const r = Math.max((o.diameter / 2) * s, 0.45);
+    if (o.kind === 'rasgo' && o.length) {
+      const [w, h] = o.alongWidth ? [o.diameter, o.length] : [o.length, o.diameter];
+      doc.setFillColor(...rgb);
+      doc.rect(X(o.u), Y(o.v) - h * s, Math.max(w * s, 0.3), Math.max(h * s, 0.3), 'F');
+    } else if (o.surface === 'borda') {
+      doc.setFillColor(...rgb);
+      const q = r * 1.3;
+      doc.triangle(X(o.u), Y(o.v) - q, X(o.u) + q, Y(o.v), X(o.u), Y(o.v) + q, 'F');
+      doc.triangle(X(o.u), Y(o.v) - q, X(o.u) - q, Y(o.v), X(o.u), Y(o.v) + q, 'F');
+    } else if (o.surface === 'face-a') {
+      doc.setFillColor(...rgb);
+      doc.circle(X(o.u), Y(o.v), r, 'F');
+    } else {
+      doc.setDrawColor(...rgb);
+      doc.setLineWidth(0.3);
+      doc.circle(X(o.u), Y(o.v), r, 'S');
+    }
+  }
 }
 
 export function buildPdfReport(data: PdfReportData): jsPDF {
@@ -603,7 +745,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
 
   // --- 2. Móveis ----------------------------------------------------------------------
   if (data.room) writeRoom(w, 2, data.room, data.placements ?? []);
-  items.forEach((it, i) => writeItem(w, data.room ? 3 : 2, it, i, items.length));
+  items.forEach((it, i) => writeItem(w, data.room ? 3 : 2, it, i, items.length, numberOf));
 
   // --- 3. Lista de corte ---------------------------------------------------------------
   w.section(4, 'Lista de corte', { newPage: true });

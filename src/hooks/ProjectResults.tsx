@@ -10,11 +10,14 @@ import { useProjectStore } from '@/store/projectStore';
 import { planCutting } from '@/engine/nestingEngine';
 import { buildItemResults, projectHardware, projectPieces, projectTools, type ItemResult } from '@/engine/projectEngine';
 import { computeBudget } from '@/engine/budgetEngine';
-import { resolvePlacements, roomWarnings } from '@/engine/roomEngine';
+import { connectorHardware, moduleConnections, resolvePlacements, roomWarnings, type ModuleConnection } from '@/engine/roomEngine';
+import { mergeHardware } from '@/engine/hardwareEngine';
+import { computeJoinery } from '@/engine/joineryEngine';
 import type {
   AssembledModel,
   Budget,
   HardwareItem,
+  JoineryPlan,
   MaterialRole,
   MaterialSpec,
   NestingResult,
@@ -42,6 +45,10 @@ export interface ProjectResults {
   /** Móveis posicionados no ambiente (automáticos + ajustados pelo usuário). */
   placements: ResolvedPlacement[];
   roomWarnings: string[];
+  /** Módulos vizinhos no ambiente que devem ser unidos entre si. */
+  connections: ModuleConnection[];
+  /** Encaixes, furação e passo a passo do móvel ativo. */
+  joinery: JoineryPlan;
 }
 
 const ResultsContext = createContext<ProjectResults | null>(null);
@@ -60,16 +67,24 @@ export function ProjectResultsProvider({ children }: { children: ReactNode }) {
   const pieces = useMemo(() => projectPieces(items), [items]);
   const deferredPieces = useDeferredValue(pieces);
   const nesting = useMemo(() => planCutting(deferredPieces, materials, sheet), [deferredPieces, materials, sheet]);
-  const hardware = useMemo(() => projectHardware(items, pieces, materials), [items, pieces, materials]);
   const tools = useMemo(() => projectTools(items, services), [items, services]);
-  const budget = useMemo(() => computeBudget(nesting, hardware, services, prices), [nesting, hardware, services, prices]);
   const placements = useMemo(() => resolvePlacements(items, room, savedPlacements), [items, room, savedPlacements]);
   const warnings = useMemo(() => roomWarnings(placements, room), [placements, room]);
+  const connections = useMemo(() => moduleConnections(placements), [placements]);
+  // Ferragens dos móveis + parafusos de união entre módulos vizinhos no ambiente.
+  const hardware = useMemo(
+    () => mergeHardware([{ items: projectHardware(items, pieces, materials), quantity: 1 }, { items: connectorHardware(connections), quantity: 1 }]),
+    [items, pieces, materials, connections],
+  );
+  const budget = useMemo(() => computeBudget(nesting, hardware, services, prices), [nesting, hardware, services, prices]);
 
-  const value = useMemo(() => {
-    const active = items.find((r) => r.item.id === activeItemId) ?? items[0]!;
-    return { items, active, model: active.model, pieces, nesting, hardware, tools, budget, materials, sheet, placements, roomWarnings: warnings };
-  }, [items, activeItemId, pieces, nesting, hardware, tools, budget, materials, sheet, placements, warnings]);
+  const active = items.find((r) => r.item.id === activeItemId) ?? items[0]!;
+  const joinery = useMemo(() => computeJoinery(active.model), [active.model]);
+
+  const value = useMemo(
+    () => ({ items, active, model: active.model, pieces, nesting, hardware, tools, budget, materials, sheet, placements, roomWarnings: warnings, connections, joinery }),
+    [items, active, pieces, nesting, hardware, tools, budget, materials, sheet, placements, warnings, connections, joinery],
+  );
 
   return <ResultsContext.Provider value={value}>{children}</ResultsContext.Provider>;
 }

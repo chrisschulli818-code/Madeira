@@ -315,7 +315,7 @@ export function buildCustom(params: CustomParams): AssembledModel {
     .map((p) => {
       const box = panelBox(p);
       const [width, height] = p.orientation === 'side' ? [box.d, box.h] : p.orientation === 'front' ? [box.w, box.h] : [box.w, box.d];
-      return { pieceId: pieceOf.get(p.id) ?? '', width: floorMm(width), height: floorMm(height), hingeSide: 'left', overlay: 'full' };
+      return { pieceId: pieceOf.get(p.id) ?? '', width: floorMm(width), height: floorMm(height), hingeSide: 'left', overlay: 'full', box };
     });
   const adjustableShelves = panels.filter((p) => p.kind === 'prateleira').length;
   const backPerimeter = panels

@@ -13,6 +13,7 @@
 import type {
   AssembledModel,
   FurniturePlacement,
+  HardwareItem,
   ProjectItem,
   ResolvedPlacement,
   RoomOpening,
@@ -81,8 +82,9 @@ const isWallMounted = (item: ProjectItem) => item.templateId === 'wall-cabinet';
 
 /**
  * Posições de todas as unidades de móveis do projeto. As que o usuário já posicionou
- * vêm de `saved`; as demais são distribuídas automaticamente: móveis de piso ao longo da
- * parede do fundo e depois da parede esquerda; aéreos na parede do fundo a 1500 mm do piso.
+ * vêm de `saved`; as demais vão para o primeiro lugar livre ao longo das paredes
+ * (fundo, esquerda, direita, frente), de costas para a parede, sem sobrepor outros móveis
+ * nem bloquear portas. Aéreos ficam pendurados a 1500 mm do piso.
  */
 export function resolvePlacements(
   entries: Array<{ item: ProjectItem; model: AssembledModel }>,
@@ -90,48 +92,75 @@ export function resolvePlacements(
   saved: FurniturePlacement[],
 ): ResolvedPlacement[] {
   const savedByKey = new Map(saved.map((p) => [placementKey(p.itemId, p.unit), p]));
-  const out: ResolvedPlacement[] = [];
-  let floorX = 0;
-  let wallX = 0;
-  let leftZ: number | null = null;
-
-  for (const { item, model } of entries) {
+  type Slot = { item: ProjectItem; unit: number; units: number; size: ResolvedPlacement['size']; origin: ResolvedPlacement['origin'] };
+  const slots: Slot[] = entries.flatMap(({ item, model }) => {
     const { size, origin } = furnitureExtent(model);
     const units = Math.max(1, Math.floor(item.quantity || 1));
-    for (let unit = 0; unit < units; unit++) {
-      const key = placementKey(item.id, unit);
-      const s = savedByKey.get(key);
-      let placement: FurniturePlacement;
-      if (s) {
-        placement = s;
-      } else if (isWallMounted(item)) {
-        placement = { itemId: item.id, unit, x: Math.min(wallX, Math.max(0, room.width - size.w)), z: 0, rotation: 0, elevation: WALL_CABINET_ELEVATION };
-        wallX += size.w;
-      } else if (floorX + size.w <= room.width) {
-        placement = { itemId: item.id, unit, x: floorX, z: 0, rotation: 0, elevation: 0 };
-        floorX += size.w;
-      } else {
-        // Parede do fundo cheia: continua pela parede esquerda (girado 90°), abaixo do que já está no canto.
-        if (leftZ === null) leftZ = Math.max(0, ...out.filter((p) => p.elevation === 0 && p.x < 1).map((p) => p.z + p.footprint.d));
-        const fp = footprintOf(size, 90);
-        placement = { itemId: item.id, unit, x: 0, z: Math.min(leftZ, Math.max(0, room.depth - fp.d)), rotation: 90, elevation: 0 };
-        leftZ += fp.d;
-      }
-      const footprint = footprintOf(size, placement.rotation);
-      out.push({
-        ...placement,
-        key,
-        name: units > 1 ? `${item.name} (${unit + 1})` : item.name,
-        templateId: item.templateId,
-        size,
-        origin,
-        footprint,
-        wall: wallOf(placement, footprint, room),
-        auto: !s,
-      });
+    return Array.from({ length: units }, (_, unit) => ({ item, unit, units, size, origin }));
+  });
+
+  const resolve = (slot: Slot, placement: FurniturePlacement, auto: boolean): ResolvedPlacement => {
+    const footprint = footprintOf(slot.size, placement.rotation);
+    return {
+      ...placement,
+      key: placementKey(slot.item.id, slot.unit),
+      name: slot.units > 1 ? `${slot.item.name} (${slot.unit + 1})` : slot.item.name,
+      templateId: slot.item.templateId,
+      size: slot.size,
+      origin: slot.origin,
+      footprint,
+      wall: wallOf(placement, footprint, room),
+      auto,
+    };
+  };
+
+  // 1) Posições já definidas pelo usuário.
+  const byKey = new Map<string, ResolvedPlacement>();
+  for (const slot of slots) {
+    const s = savedByKey.get(placementKey(slot.item.id, slot.unit));
+    if (s) byKey.set(placementKey(slot.item.id, slot.unit), resolve(slot, s, false));
+  }
+  // 2) Demais: primeiro lugar livre.
+  for (const slot of slots) {
+    const key = placementKey(slot.item.id, slot.unit);
+    if (byKey.has(key)) continue;
+    const elevation = isWallMounted(slot.item) ? WALL_CABINET_ELEVATION : 0;
+    const spot = findFreeSpot(slot.size, elevation, room, [...byKey.values()]);
+    byKey.set(key, resolve(slot, { itemId: slot.item.id, unit: slot.unit, elevation, ...spot }, true));
+  }
+  return slots.map((slot) => byKey.get(placementKey(slot.item.id, slot.unit))!);
+}
+
+/**
+ * Primeiro lugar livre ao longo das paredes para um móvel de medidas `size` na altura `elevation`.
+ * Não sobrepõe móveis da mesma faixa de altura e, no piso, não bloqueia a abertura das portas.
+ */
+export function findFreeSpot(
+  size: ResolvedPlacement['size'],
+  elevation: number,
+  room: RoomSettings,
+  placed: ResolvedPlacement[],
+): { x: number; z: number; rotation: Rotation } {
+  const step = 10;
+  const blockers = placed.filter((o) => rangesOverlap(elevation, elevation + size.h, o.elevation, o.elevation + o.size.h));
+  const doors = room.openings.filter((o) => o.kind === 'porta' && elevation < o.height).map((o) => doorSwingZone(o, room));
+  const free = (x: number, z: number, fp: { w: number; d: number }) =>
+    !blockers.some((o) => rangesOverlap(x, x + fp.w, o.x, o.x + o.footprint.w) && rangesOverlap(z, z + fp.d, o.z, o.z + o.footprint.d)) &&
+    !doors.some((d) => rangesOverlap(x, x + fp.w, d.x, d.x + d.w) && rangesOverlap(z, z + fp.d, d.z, d.z + d.d));
+
+  for (const wall of ['fundo', 'esquerda', 'direita', 'frente'] as WallSide[]) {
+    const rotation = ROTATION_FOR_WALL[wall];
+    const fp = footprintOf(size, rotation);
+    const alongSize = wall === 'fundo' || wall === 'frente' ? fp.w : fp.d;
+    if (fp.w > room.width || fp.d > room.depth) continue;
+    for (let t = 0; t + alongSize <= wallLength(room, wall) + 0.5; t += step) {
+      const x = wall === 'fundo' || wall === 'frente' ? t : wall === 'esquerda' ? 0 : room.width - fp.w;
+      const z = wall === 'esquerda' || wall === 'direita' ? t : wall === 'fundo' ? 0 : room.depth - fp.d;
+      if (free(x, z, fp)) return { x: Math.round(x), z: Math.round(z), rotation };
     }
   }
-  return out;
+  // Sem espaço nas paredes: no meio do cômodo.
+  return { x: Math.max(0, Math.round((room.width - size.w) / 2)), z: Math.max(0, Math.round((room.depth - size.d) / 2)), rotation: 0 };
 }
 
 const rangesOverlap = (a0: number, a1: number, b0: number, b1: number) => Math.min(a1, b1) - Math.max(a0, b0) > 0.5;
@@ -307,4 +336,59 @@ export function moveToWall(p: ResolvedPlacement, wall: WallSide, room: RoomSetti
           ? { x: 0, z: cz - fp.d / 2 }
           : { x: room.width - fp.w, z: cz - fp.d / 2 };
   return snapPlacement(turned, target, room, others, false);
+}
+
+// ---------------------------------------------------------------------------
+// União entre módulos vizinhos
+// ---------------------------------------------------------------------------
+
+export interface ModuleConnection {
+  a: ResolvedPlacement;
+  b: ResolvedPlacement;
+  /** Parafusos de união entre os dois módulos. */
+  connectors: number;
+}
+
+/**
+ * Módulos encostados lado a lado (laterais se tocando, mesma faixa de altura) devem ser unidos
+ * entre si com parafusos de união: 4 por par (2 em cima, 2 embaixo), ou 2 em módulos baixos.
+ */
+export function moduleConnections(placements: ResolvedPlacement[]): ModuleConnection[] {
+  const out: ModuleConnection[] = [];
+  const touch = (a0: number, a1: number, b0: number, b1: number) => Math.abs(a1 - b0) <= 2 || Math.abs(b1 - a0) <= 2;
+  const eligible = placements.filter((p) => p.templateId !== 'workbench');
+  for (let i = 0; i < eligible.length; i++) {
+    for (let j = i + 1; j < eligible.length; j++) {
+      const a = eligible[i]!;
+      const b = eligible[j]!;
+      const vertical = Math.min(a.elevation + a.size.h, b.elevation + b.size.h) - Math.max(a.elevation, b.elevation);
+      if (vertical < 200) continue;
+      const sideBySide =
+        (touch(a.x, a.x + a.footprint.w, b.x, b.x + b.footprint.w) &&
+          Math.min(a.z + a.footprint.d, b.z + b.footprint.d) - Math.max(a.z, b.z) >= 100) ||
+        (touch(a.z, a.z + a.footprint.d, b.z, b.z + b.footprint.d) &&
+          Math.min(a.x + a.footprint.w, b.x + b.footprint.w) - Math.max(a.x, b.x) >= 100);
+      if (sideBySide) out.push({ a, b, connectors: vertical >= 600 ? 4 : 2 });
+    }
+  }
+  return out;
+}
+
+/** Item da lista de compras para unir os módulos do ambiente. */
+export function connectorHardware(connections: ModuleConnection[]): HardwareItem[] {
+  const qty = connections.reduce((n, c) => n + c.connectors, 0);
+  if (!qty) return [];
+  const name = 'Parafuso de união para módulos';
+  const specification = 'Conector Ø5 × 30 mm (macho e fêmea)';
+  return [
+    {
+      id: `fixacao:${name}:${specification}`,
+      category: 'fixacao',
+      name,
+      specification,
+      quantity: qty,
+      unit: 'un',
+      application: `Unir ${connections.length} par(es) de módulos vizinhos no ambiente`,
+    },
+  ];
 }

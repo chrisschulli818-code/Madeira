@@ -10,6 +10,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
+  LibraryEntry,
   FurniturePlacement,
   RoomOpening,
   RoomSettings,
@@ -68,6 +69,15 @@ export interface ProjectState extends ProjectData {
   setPlacement: (placement: FurniturePlacement) => void;
   /** Volta todos os móveis para a organização automática. */
   resetPlacements: () => void;
+  // Meus móveis (biblioteca pessoal, salva no navegador)
+  library: LibraryEntry[];
+  /** Salva uma cópia do móvel na biblioteca. */
+  saveToLibrary: (itemId: string) => void;
+  removeFromLibrary: (entryId: string) => void;
+  /** Guarda na biblioteca móveis vindos de um arquivo de projeto. */
+  addToLibrary: (items: ProjectItem[]) => number;
+  /** Coloca cópias de móveis (da biblioteca ou de um arquivo) no projeto; devolve os novos ids. */
+  insertItems: (items: ProjectItem[]) => string[];
 
   setProjectName: (name: string) => void;
   // Móveis
@@ -162,7 +172,14 @@ export const useProjectStore = create<ProjectState>()(
         selectedPlacement: null,
 
         setViewMode: (viewMode) => set({ viewMode, selectedPieceId: null, hoveredPieceId: null }),
-        selectPlacement: (selectedPlacement) => set({ selectedPlacement }),
+        // Selecionar um móvel no ambiente também o torna o móvel ativo (para editar ali mesmo).
+        selectPlacement: (selectedPlacement) =>
+          set((s) => {
+            const itemId = selectedPlacement?.split('#')[0];
+            return itemId && s.items.some((i) => i.id === itemId)
+              ? { selectedPlacement, activeItemId: itemId }
+              : { selectedPlacement };
+          }),
         setRoom: (patch) => set((s) => ({ room: { ...s.room, ...patch } })),
         addOpening: (kind) =>
           set((s) => ({
@@ -186,12 +203,49 @@ export const useProjectStore = create<ProjectState>()(
           }),
         resetPlacements: () => set({ placements: [] }),
 
+        library: [],
+        saveToLibrary: (itemId) =>
+          set((s) => {
+            const item = s.items.find((i) => i.id === itemId);
+            if (!item) return {};
+            const entry: LibraryEntry = { id: newItemId(), savedAt: new Date().toISOString(), item: { ...structuredClone(item), quantity: 1 } };
+            // Mesmo nome já salvo: substitui pela versão atual.
+            return { library: [entry, ...s.library.filter((e) => e.item.name !== item.name)] };
+          }),
+        removeFromLibrary: (entryId) => set((s) => ({ library: s.library.filter((e) => e.id !== entryId) })),
+        addToLibrary: (items) => {
+          const entries = items.map((item): LibraryEntry => ({ id: newItemId(), savedAt: new Date().toISOString(), item: { ...structuredClone(item), quantity: 1 } }));
+          set((s) => ({ library: [...entries, ...s.library] }));
+          return entries.length;
+        },
+        insertItems: (source) => {
+          const ids: string[] = [];
+          set((s) => {
+            const items = [...s.items];
+            for (const original of source) {
+              const copy = { ...structuredClone(original), id: newItemId(), name: uniqueName(items, original.name) } as ProjectItem;
+              items.push(copy);
+              ids.push(copy.id);
+            }
+            return ids.length
+              ? { items, activeItemId: ids[0]!, selectedPlacement: s.viewMode === 'room' ? `${ids[0]}#0` : s.selectedPlacement }
+              : {};
+          });
+          return ids;
+        },
+
         setProjectName: (projectName) => set({ projectName }),
 
         addItem: (templateId) =>
           set((s) => {
             const item = createItem(templateId, uniqueName(s.items, TEMPLATES[templateId].name));
-            return { items: [...s.items, item], activeItemId: item.id, selectedPieceId: null };
+            return {
+              items: [...s.items, item],
+              activeItemId: item.id,
+              selectedPieceId: null,
+              // No ambiente, o móvel novo já fica selecionado para posicionar e editar.
+              selectedPlacement: s.viewMode === 'room' ? `${item.id}#0` : s.selectedPlacement,
+            };
           }),
         duplicateItem: (id) =>
           set((s) => {
