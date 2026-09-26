@@ -142,6 +142,24 @@ function WorkbenchForm({ params: p, templateId }: { params: WorkbenchParams; tem
         {p.lowerShelf && (
           <SliderField label="Altura da prateleira" value={p.lowerShelfHeight} min={50} max={500} step={10} onChange={(lowerShelfHeight) => update({ lowerShelfHeight })} />
         )}
+        <FieldRow label="Gaveteiro">
+          <Segmented
+            aria-label="Gaveteiro"
+            value={p.pedestal ?? 'none'}
+            onChange={(pedestal) => update({ pedestal })}
+            options={[
+              { value: 'none', label: 'Sem' },
+              { value: 'left', label: 'Esquerda' },
+              { value: 'right', label: 'Direita' },
+            ]}
+          />
+        </FieldRow>
+        {(p.pedestal ?? 'none') !== 'none' && (
+          <>
+            <SliderField label="Gavetas" value={p.pedestalDrawers ?? 3} min={1} max={6} step={1} unit="" onChange={(pedestalDrawers) => update({ pedestalDrawers })} />
+            <SliderField label="Largura do gaveteiro" value={p.pedestalWidth ?? 400} min={250} max={800} step={10} onChange={(pedestalWidth) => update({ pedestalWidth })} />
+          </>
+        )}
         <FieldRow label="Montagem">
           <Segmented aria-label="Montagem" value={p.assembly} onChange={(assembly) => update({ assembly })} options={ASSEMBLY_OPTIONS} />
         </FieldRow>
@@ -334,6 +352,33 @@ function BedForm({ params: p }: { params: BedParams }) {
             ]}
           />
         </FieldRow>
+        <FieldRow label="Gavetões sob a cama">
+          <Segmented
+            aria-label="Gavetões por lado"
+            value={String(p.drawersPerSide ?? 0)}
+            onChange={(v) => update({ drawersPerSide: Number(v) })}
+            options={[
+              { value: '0', label: 'Sem' },
+              { value: '1', label: '1' },
+              { value: '2', label: '2' },
+              { value: '3', label: '3' },
+            ]}
+          />
+        </FieldRow>
+        {(p.drawersPerSide ?? 0) > 0 && (
+          <FieldRow label="Lado" hint="Gavetões com rodízios, logo abaixo das laterais. Estrado mais alto = gavetas mais fundas.">
+            <Segmented
+              aria-label="Lado dos gavetões"
+              value={p.drawerSides ?? 'ambos'}
+              onChange={(drawerSides) => update({ drawerSides })}
+              options={[
+                { value: 'ambos', label: 'Ambos' },
+                { value: 'esquerda', label: 'Esq.' },
+                { value: 'direita', label: 'Dir.' },
+              ]}
+            />
+          </FieldRow>
+        )}
         <FieldRow label="Chapa">
           <ThicknessPicker value={p.thickness} presets={[15, 18, 25]} onChange={(thickness) => update({ thickness })} />
         </FieldRow>

@@ -162,6 +162,8 @@ export function parseItem(raw: unknown): ProjectItem | null {
   if (templateId === 'bed') {
     const params = mergeKnown<BedParams>(defaultParamsFor('bed'), raw.params);
     if (!['ripas', 'chapa'].includes(params.deck)) params.deck = 'ripas';
+    if (!['ambos', 'esquerda', 'direita'].includes(params.drawerSides ?? '')) params.drawerSides = 'ambos';
+    params.drawersPerSide = Math.max(0, Math.min(3, Math.round(params.drawersPerSide ?? 0)));
     if (!['screw', 'minifix', 'dowel'].includes(params.assembly)) params.assembly = 'screw';
     return { ...base, templateId, params };
   }
@@ -173,6 +175,7 @@ export function parseItem(raw: unknown): ProjectItem | null {
   }
   if (isWorkbenchId(templateId)) {
     const params = mergeKnown<WorkbenchParams>(defaultParamsFor(templateId), raw.params);
+    if (!['none', 'left', 'right'].includes(params.pedestal ?? '')) params.pedestal = 'none';
     if (!['screw', 'minifix', 'dowel'].includes(params.assembly)) params.assembly = 'screw';
     return { ...base, templateId, params };
   }

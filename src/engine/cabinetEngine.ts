@@ -68,8 +68,11 @@ import { buildProp } from './propEngine';
 export const cutMm = (v: number): number => Math.floor(v + 1e-6);
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+/** Chapas das caixas de gaveta nos móveis sem parâmetro próprio (mesa, cama). */
+const DRAWER_BOX_T = 15;
+const DRAWER_BOTTOM = 6;
 
-interface PieceInput {
+export interface PieceInput {
   name: string;
   role: PieceRole;
   material: MaterialRole;
@@ -156,6 +159,86 @@ export function pickSlideLength(internalDepth: number): number | null {
   const available = internalDepth - SLIDE_REAR_CLEARANCE;
   const fits = SLIDE_LENGTHS.filter((l) => l <= available);
   return fits.length ? fits[fits.length - 1]! : null;
+}
+
+/**
+ * Peças de uma gaveta completa (frente + caixa com laterais, contra-frente/traseira e fundo),
+ * para móveis que não são de caixa (mesa com gaveteiro, cama com gavetões).
+ * A caixa corre no eixo Z: a frente fica em `frontBox` e a caixa atrás dela, com `length` de profundidade.
+ * `axis: 'x'` gira a gaveta para correr no eixo X (frente no plano YZ, ex.: gavetão lateral de cama).
+ */
+export function drawerPieces(o: {
+  frontBox: Box3D;
+  /** Vão livre (entre os apoios) onde a caixa corre: início e largura. */
+  box: { along: number; width: number; y: number; height: number; start: number; length: number };
+  axis?: 'x' | 'z';
+  Td: number;
+  Tb: number;
+  runner?: 'corredica' | 'rodizio';
+}): { pieces: PieceInput[]; spec: DrawerSpec; joints: Joint[] } {
+  const { frontBox, box, Td, Tb } = o;
+  const axis = o.axis ?? 'z';
+  // Caixa descrita em coordenadas (a = ao longo da frente, c = profundidade); converte para X/Z.
+  const place = (a: number, y: number, c: number, wa: number, h: number, dc: number): Box3D =>
+    axis === 'z' ? { x: a, y, z: c, w: wa, h, d: dc } : { x: c, y, z: a, w: dc, h, d: wa };
+  const frontLen = axis === 'z' ? frontBox.w : frontBox.d;
+  const Tf = axis === 'z' ? frontBox.d : frontBox.w;
+  const pieces: PieceInput[] = [
+    {
+      name: 'Frente de gaveta',
+      role: 'drawer-front',
+      material: 'front',
+      length: frontLen,
+      width: frontBox.h,
+      thickness: Tf,
+      edgeBanding: EDGE.all,
+      instances: [frontBox],
+    },
+    {
+      name: 'Lateral da gaveta',
+      role: 'drawer-side',
+      material: 'drawer',
+      length: box.length,
+      width: box.height,
+      thickness: Td,
+      edgeBanding: EDGE.oneLong,
+      instances: [box.along, box.along + box.width - Td].map((a) => place(a, box.y, box.start, Td, box.height, box.length)),
+    },
+    {
+      name: 'Contra-frente / traseira da gaveta',
+      role: 'drawer-back',
+      material: 'drawer',
+      length: box.width - 2 * Td,
+      width: box.height,
+      thickness: Td,
+      edgeBanding: EDGE.oneLong,
+      instances: [box.start, box.start + box.length - Td].map((c) => place(box.along + Td, box.y, c, box.width - 2 * Td, box.height, Td)),
+    },
+    {
+      name: 'Fundo da gaveta',
+      role: 'drawer-bottom',
+      material: 'back',
+      length: box.length,
+      width: box.width,
+      thickness: Tb,
+      edgeBanding: EDGE.none,
+      grain: 'free',
+      instances: [place(box.along, box.y - Tb, box.start, box.width, Tb, box.length)],
+      notes: 'Pregado/grampeado por baixo da caixa',
+    },
+  ];
+  return {
+    pieces,
+    spec: {
+      frontWidth: cutMm(frontLen),
+      frontHeight: cutMm(frontBox.h),
+      boxWidth: cutMm(box.width),
+      boxHeight: cutMm(box.height),
+      slideLength: cutMm(box.length),
+      ...(o.runner === 'rodizio' ? { runner: 'rodizio' as const } : {}),
+    },
+    joints: [1, 2, 3, 4].map(() => ({ label: 'Canto de gaveta', length: box.height })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -665,18 +748,81 @@ export function buildWorkbench(input: WorkbenchParams, templateId: WorkbenchTemp
   });
   joints.push({ label: 'Saia × painéis', length: p.apronHeight }, { label: 'Saia × painéis', length: p.apronHeight });
 
-  if (p.lowerShelf) {
+  // --- Gaveteiro sob o tampo, encostado num dos painéis -------------------------------------
+  const drawers: DrawerSpec[] = [];
+  const side = p.pedestal ?? 'none';
+  const nDrawers = clamp(Math.round(p.pedestalDrawers ?? 3), 1, 6);
+  const pw = clamp(p.pedestalWidth ?? 400, 250, Math.max(250, between - Tp - 100));
+  const hasPedestal = side !== 'none' && between > pw + Tp + 100;
+  // Região livre entre os painéis (onde fica a prateleira inferior e as pernas).
+  let freeX0 = o + Tp;
+  let freeW = between;
+  if (hasPedestal) {
+    const xIn = side === 'left' ? o + Tp : W - o - Tp - pw;
+    const divX = side === 'left' ? xIn + pw : xIn - Tp;
+    freeX0 = side === 'left' ? divX + Tp : o + Tp;
+    freeW = between - pw - Tp;
+    if (freeW < 500) out.warnings.push(`Sobram só ${Math.round(freeW)} mm para as pernas ao lado do gaveteiro; o ideal é pelo menos 500 mm.`);
+    const pedD = legD - Tp;
+    const zBack = o + Tp;
+    out.add({
+      name: 'Divisória do gaveteiro',
+      role: 'divider',
+      material: 'carcass',
+      length: legH,
+      width: pedD,
+      thickness: Tp,
+      edgeBanding: EDGE.oneLong,
+      instances: [{ x: divX, y: 0, z: zBack, w: Tp, h: legH, d: pedD }],
+    });
+    out.add({
+      name: 'Base do gaveteiro',
+      role: 'bottom',
+      material: 'carcass',
+      length: pw,
+      width: pedD,
+      thickness: Tp,
+      edgeBanding: EDGE.oneLong,
+      instances: [{ x: xIn, y: 0, z: zBack, w: pw, h: Tp, d: pedD }],
+    });
+    joints.push({ label: 'Base do gaveteiro × painéis', length: pedD }, { label: 'Base do gaveteiro × painéis', length: pedD }, { label: 'Divisória × saia', length: p.apronHeight });
+
+    const slide = pickSlideLength(pedD);
+    const g = 3;
+    const fh = (legH - (nDrawers + 1) * g) / nDrawers;
+    if (!slide) out.warnings.push('A mesa é rasa demais para corrediças de gaveta (mínimo 260 mm de painel).');
+    else if (fh < 100) out.warnings.push(`As frentes do gaveteiro ficaram com ${Math.round(fh)} mm; use menos gavetas.`);
+    else {
+      const frontZ = o + legD;
+      for (let k = 0; k < nDrawers; k++) {
+        const bottom = g + k * (fh + g);
+        const boxY = Math.max(bottom, Tp) + 10 + DRAWER_BOTTOM;
+        const boxH = Math.max(DRAWER_MIN_BOX_HEIGHT, Math.min(fh - DRAWER_HEIGHT_CLEARANCE, bottom + fh - boxY - 5));
+        const d = drawerPieces({
+          frontBox: { x: xIn - Tp / 2 + g / 2, y: bottom, z: frontZ, w: pw + Tp - g, h: fh, d: Tp },
+          box: { along: xIn + SLIDE_CLEARANCE_PER_SIDE, width: pw - 2 * SLIDE_CLEARANCE_PER_SIDE, y: boxY, height: boxH, start: frontZ - slide, length: slide },
+          Td: DRAWER_BOX_T,
+          Tb: DRAWER_BOTTOM,
+        });
+        d.pieces.forEach((piece) => out.add(piece));
+        drawers.push(d.spec);
+        joints.push(...d.joints);
+      }
+    }
+  }
+
+  if (p.lowerShelf && freeW > 100) {
     const shelfY = clamp(p.lowerShelfHeight, 50, legH - p.apronHeight - Tp - 100);
     const shelfD = legD - Tp;
     out.add({
       name: 'Prateleira inferior',
       role: 'fixed-shelf',
       material: 'carcass',
-      length: between,
+      length: freeW,
       width: shelfD,
       thickness: Tp,
       edgeBanding: EDGE.oneLong,
-      instances: [{ x: o + Tp, y: shelfY, z: o + Tp, w: between, h: Tp, d: shelfD }],
+      instances: [{ x: freeX0, y: shelfY, z: o + Tp, w: freeW, h: Tp, d: shelfD }],
     });
     joints.push({ label: 'Prateleira × painéis', length: shelfD }, { label: 'Prateleira × painéis', length: shelfD });
   }
@@ -693,7 +839,7 @@ export function buildWorkbench(input: WorkbenchParams, templateId: WorkbenchTemp
     overall: { width: W, height: H, depth: D },
     pieces: out.pieces(),
     doors: [],
-    drawers: [],
+    drawers,
     joints,
     adjustableShelves: 0,
     hangingRods: [],

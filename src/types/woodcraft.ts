@@ -120,6 +120,12 @@ export interface WorkbenchParams {
   lowerShelf: boolean;
   /** Altura da prateleira inferior em relação ao chão. */
   lowerShelfHeight: number;
+  /** Gaveteiro sob o tampo, encostado num dos painéis (opcional em projetos antigos = sem gaveteiro). */
+  pedestal?: 'none' | 'left' | 'right';
+  /** Largura interna do gaveteiro. */
+  pedestalWidth?: number;
+  /** Quantidade de gavetas do gaveteiro. */
+  pedestalDrawers?: number;
   assembly: AssemblyMethod;
 }
 
@@ -184,6 +190,10 @@ export interface BedParams {
   thickness: number;
   /** Estrado de ripas (MDF) ou chapa inteira. */
   deck: 'ripas' | 'chapa';
+  /** Gavetões com rodízios sob o estrado: por lado (0 = sem gavetas). */
+  drawersPerSide?: number;
+  /** De que lado(s) ficam os gavetões. */
+  drawerSides?: 'ambos' | 'esquerda' | 'direita';
   assembly: AssemblyMethod;
 }
 
@@ -326,8 +336,10 @@ export interface DrawerSpec {
   frontHeight: number;
   boxWidth: number;
   boxHeight: number;
-  /** Comprimento comercial da corrediça (mm). */
+  /** Comprimento comercial da corrediça (mm); nos gavetões com rodízios, a profundidade da caixa. */
   slideLength: number;
+  /** Como a gaveta corre: corrediça telescópica (padrão) ou rodízios no piso (gavetão de cama). */
+  runner?: 'corredica' | 'rodizio';
 }
 
 /** Junção estrutural entre duas peças da caixa (define parafusos/minifix/cavilhas). */

@@ -44,7 +44,10 @@ A partir das medidas externas e das opções de construção, gera automaticamen
   para compor o cômodo. Eles aparecem na planta, no 3D e nas imagens, mas não entram no corte, compras ou orçamento.
 
 Templates: balcão inferior, armário aéreo, guarda-roupa modular, criado-mudo, cômoda, estante, rack de TV,
-mesa de trabalho, escrivaninha, cama (calculada pelo tamanho do colchão, com estrado de ripas ou chapa) e móvel livre. Em cada vão é possível
+mesa de trabalho, escrivaninha, cama (calculada pelo tamanho do colchão, com estrado de ripas ou chapa) e móvel livre.
+**Gavetas em todos os móveis**: nos móveis de caixa, cada vão combina gavetas, porta, prateleiras e cabideiro; mesa e
+escrivaninha têm **gaveteiro** opcional (à esquerda ou à direita, 1–6 gavetas com corrediça); a cama tem **gavetões com
+rodízios** sob as laterais (1–3 por lado, de um lado ou dos dois); no móvel livre há o módulo de gaveta. Em cada vão é possível
 combinar gavetas e porta, com o gaveteiro em cima ou embaixo.
 
 ## Como rodar

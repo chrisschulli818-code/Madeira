@@ -23,6 +23,12 @@ export function describeParams(templateId: TemplateId, params: ProjectItem['para
       ['Dimensões externas (L × A × P)', `${overall.width} × ${overall.height} × ${overall.depth} mm`],
       ['Colchão', `${p.mattressWidth} × ${p.mattressLength} × ${p.mattressHeight} mm`],
       ['Estrado', `${p.deck === 'ripas' ? 'Ripas de 70 mm' : 'Chapa inteira'}, a ${p.deckHeight} mm do piso`],
+      [
+        'Gavetões',
+        (p.drawersPerSide ?? 0) > 0
+          ? `${p.drawersPerSide} por lado (${p.drawerSides === 'esquerda' ? 'lado esquerdo' : p.drawerSides === 'direita' ? 'lado direito' : 'os dois lados'}), com rodízios`
+          : 'não',
+      ],
       ['Cabeceira / peseira', `${p.headboardHeight} mm / ${p.footboard ? `${p.footboardHeight} mm` : 'baixa'}`],
       ['Chapa', `${p.thickness} mm`],
       ['Montagem', `${ASSEMBLY[p.assembly]} + ferragens de encaixe nas laterais`],
@@ -49,6 +55,12 @@ export function describeParams(templateId: TemplateId, params: ProjectItem['para
       ['Tampo', `${p.topThickness} mm, balanço de ${p.sideOverhang} mm`],
       ['Painéis laterais / saia', `${p.panelThickness} mm, saia de ${p.apronHeight} mm`],
       ['Prateleira inferior', p.lowerShelf ? `a ${p.lowerShelfHeight} mm do piso` : 'não'],
+      [
+        'Gaveteiro',
+        (p.pedestal ?? 'none') === 'none'
+          ? 'não'
+          : `${p.pedestalDrawers ?? 3} gaveta(s) à ${p.pedestal === 'left' ? 'esquerda' : 'direita'}, ${p.pedestalWidth ?? 400} mm de largura`,
+      ],
       ['Montagem', ASSEMBLY[p.assembly]],
     ];
   }

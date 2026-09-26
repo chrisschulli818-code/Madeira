@@ -7,9 +7,16 @@
  * - sarrafos parafusados por dentro das laterais, onde o estrado apoia;
  * - travessa central nas camas mais largas que 1,20 m;
  * - estrado de ripas (70 mm, vão de até 50 mm) ou de chapa;
+ * - gavetões opcionais com rodízios sob as laterais (a frente fica logo abaixo da lateral);
  * - colchão só como referência visual (fora da lista de corte).
  */
-import type { AssembledModel, BedParams, Box3D, CutPiece, EdgeBanding, Joint, PieceRole } from '@/types/woodcraft';
+import type { AssembledModel, BedParams, Box3D, CutPiece, DrawerSpec, EdgeBanding, Joint, PieceRole } from '@/types/woodcraft';
+import { drawerPieces, type PieceInput } from './cabinetEngine';
+
+/** Rodízio + folga: altura do fundo do gavetão em relação ao piso. */
+const CASTER_H = 45;
+const DRAWER_T = 15;
+const DRAWER_BOTTOM_T = 6;
 
 const CLEARANCE = 10;
 const LIP = 80;
@@ -116,6 +123,69 @@ export function buildBed(input: BedParams): AssembledModel {
     joints.push(...[1, 2, 3, 4].map(() => ({ label: 'Estrado × sarrafo', length: half })));
   }
 
+  // Gavetões com rodízios sob as laterais.
+  const drawers: DrawerSpec[] = [];
+  const perSide = Math.max(0, Math.min(3, Math.round(p.drawersPerSide ?? 0)));
+  if (perSide > 0) {
+    const sides = p.drawerSides === 'esquerda' ? ['esquerda'] : p.drawerSides === 'direita' ? ['direita'] : ['esquerda', 'direita'];
+    const g = 3;
+    const frontBottom = 15;
+    const frontTop = railBottom - g;
+    const fh = frontTop - frontBottom;
+    const cleatBottom = cleatTop - CLEAT_H;
+    const boxY = CASTER_H + DRAWER_BOTTOM_T;
+    const boxH = Math.min(fh - 30, Math.min(cleatBottom, frontTop) - 5 - boxY);
+    // Não pode alcançar a travessa central (nem o gavetão do outro lado).
+    const depth = Math.min(700, Math.floor((beam ? W / 2 - T / 2 - 20 : W / 2 - 10) - T));
+    const len = (innerL - (perSide + 1) * g) / perSide;
+    if (boxH < 80 || fh < 110) {
+      warnings.push(`Não cabem gavetões: sob a lateral sobram ${Math.round(fh)} mm. Aumente a altura do estrado ou diminua a altura das laterais.`);
+    } else if (depth < 250) {
+      warnings.push('A cama é estreita demais para gavetões.');
+    } else {
+      const addPiece = (pi: PieceInput) => {
+        const same = pieces.find((x) => x.name === pi.name && x.length === Math.floor(pi.length) && x.width === Math.floor(pi.width) && x.thickness === pi.thickness);
+        if (same) {
+          same.quantity += pi.instances.length;
+          same.instances.push(...pi.instances);
+          return;
+        }
+        pieces.push({
+          id: `${pi.role}-${pieces.filter((x) => x.role === pi.role).length + 1}`,
+          name: pi.name,
+          role: pi.role,
+          material: pi.material,
+          quantity: pi.instances.length,
+          length: floorMm(pi.length),
+          width: floorMm(pi.width),
+          thickness: pi.thickness,
+          edgeBanding: pi.edgeBanding,
+          grain: pi.grain ?? 'length',
+          instances: [...pi.instances],
+          notes: pi.notes,
+        });
+      };
+      for (const side of sides) {
+        const frontX = side === 'esquerda' ? 0 : W - T;
+        const start = side === 'esquerda' ? T : W - T - depth;
+        for (let k = 0; k < perSide; k++) {
+          const z0 = T + g + k * (len + g);
+          const d = drawerPieces({
+            frontBox: { x: frontX, y: frontBottom, z: z0, w: T, h: fh, d: len },
+            box: { along: z0 + 20, width: len - 40, y: boxY, height: boxH, start, length: depth },
+            axis: 'x',
+            Td: DRAWER_T,
+            Tb: DRAWER_BOTTOM_T,
+            runner: 'rodizio',
+          });
+          d.pieces.forEach(addPiece);
+          drawers.push(d.spec);
+          joints.push(...d.joints);
+        }
+      }
+    }
+  }
+
   // Colchão (referência visual).
   pieces.push({
     id: 'decor-1',
@@ -138,7 +208,7 @@ export function buildBed(input: BedParams): AssembledModel {
     overall: { width: W, height: Math.max(headH, footH), depth: D },
     pieces,
     doors: [],
-    drawers: [],
+    drawers,
     joints,
     adjustableShelves: 0,
     hangingRods: [],

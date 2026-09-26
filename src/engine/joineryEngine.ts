@@ -356,10 +356,17 @@ function assemblySteps(
   if (model.pieces.some((p) => p.role === 'plinth')) {
     steps.push({ title: 'Fixe o rodapé', detail: 'Prenda o rodapé por baixo da base com as cantoneiras, respeitando o recuo.' });
   }
-  if (model.drawers.length) {
+  const rolling = model.drawers.filter((d) => d.runner === 'rodizio').length;
+  if (rolling) {
+    steps.push({
+      title: 'Monte os gavetões',
+      detail: `Monte ${rolling} gavetão(ões) (4 cantos parafusados), pregue o fundo por baixo, parafuse 4 rodízios sob cada um e fixe a frente deixando 3 mm de folga para a lateral da cama.`,
+    });
+  }
+  if (model.drawers.length > rolling) {
     steps.push({
       title: 'Monte e instale as gavetas',
-      detail: `Monte as ${model.drawers.length} caixa(s) de gaveta (4 cantos parafusados), pregue o fundo por baixo, fixe a parte fixa das corrediças nas laterais do vão (niveladas, rentes à frente) e a parte móvel na caixa. Encaixe e fixe as frentes com folga de 3 mm.`,
+      detail: `Monte as ${model.drawers.length - rolling} caixa(s) de gaveta (4 cantos parafusados), pregue o fundo por baixo, fixe a parte fixa das corrediças nas laterais do vão (niveladas, rentes à frente) e a parte móvel na caixa. Encaixe e fixe as frentes com folga de 3 mm.`,
     });
   }
   if (counts.hingeCount) {

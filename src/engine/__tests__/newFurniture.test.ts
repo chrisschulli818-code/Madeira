@@ -162,3 +162,85 @@ describe('modelos existentes continuam iguais', () => {
     expect(m.pieces.length).toBeGreaterThan(0);
   });
 });
+
+describe('gavetas em todos os móveis', () => {
+  const desk = (patch: Record<string, unknown> = {}) => {
+    const d = defaultItemParams('desk');
+    return buildModel({ templateId: 'desk', params: { ...(d.params as object), ...patch } } as never);
+  };
+
+  it('escrivaninha vem com gaveteiro de 3 gavetas com corrediça', () => {
+    const m = desk();
+    expect(m.drawers).toHaveLength(3);
+    expect(m.drawers.every((d) => d.runner !== 'rodizio' && [250, 300, 350, 400, 450, 500, 550].includes(d.slideLength))).toBe(true);
+    expect(m.pieces.some((p) => p.name === 'Divisória do gaveteiro')).toBe(true);
+    expect(m.warnings).toEqual([]);
+  });
+
+  it('gaveteiro fica dentro dos painéis, sem sobrepor peças da estrutura', () => {
+    for (const pedestal of ['left', 'right'] as const) {
+      const m = desk({ pedestal, pedestalDrawers: 4 });
+      const boxes = m.pieces.filter((p) => p.role === 'drawer-side').flatMap((p) => p.instances);
+      const legs = m.pieces.find((p) => p.role === 'leg-panel')!.instances;
+      const div = m.pieces.find((p) => p.name === 'Divisória do gaveteiro')!.instances[0]!;
+      for (const b of boxes) {
+        const between = pedestal === 'left' ? [legs[0]!.x + legs[0]!.w, div.x] : [div.x + div.w, legs[1]!.x];
+        expect(b.x).toBeGreaterThanOrEqual(between[0]!);
+        expect(b.x + b.w).toBeLessThanOrEqual(between[1]!);
+        expect(b.y + b.h).toBeLessThanOrEqual(m.overall.height);
+      }
+      expect(m.drawers).toHaveLength(4);
+    }
+  });
+
+  it('sem gaveteiro, mesa não tem gavetas; hardware traz corrediças do gaveteiro', () => {
+    expect(desk({ pedestal: 'none' }).drawers).toHaveLength(0);
+    const item = { ...createItem('desk') };
+    const results = buildItemResults([item]);
+    const hw = projectHardware(results, projectPieces(results), DEFAULT_MATERIALS);
+    expect(hw.find((h) => h.name === 'Corrediça telescópica')?.quantity).toBe(3);
+  });
+
+  it('cama com gavetões: frentes abaixo das laterais, caixas abaixo dos sarrafos, rodízios no hardware', () => {
+    const params = { ...bedParams(), deckHeight: 400, drawersPerSide: 2, drawerSides: 'ambos' as const };
+    const m = buildBed(params);
+    expect(m.warnings).toEqual([]);
+    expect(m.drawers).toHaveLength(4);
+    expect(m.drawers.every((d) => d.runner === 'rodizio')).toBe(true);
+    const rail = m.pieces.find((p) => p.name === 'Lateral da cama')!.instances[0]!;
+    const cleat = m.pieces.find((p) => p.role === 'cleat')!.instances[0]!;
+    const beam = m.pieces.find((p) => p.name === 'Travessa central')?.instances[0];
+    for (const f of m.pieces.find((p) => p.role === 'drawer-front')!.instances) expect(f.y + f.h).toBeLessThanOrEqual(rail.y);
+    for (const b of m.pieces.filter((p) => p.role === 'drawer-side').flatMap((p) => p.instances)) {
+      expect(b.y + b.h).toBeLessThanOrEqual(cleat.y);
+      if (beam) expect(b.x + b.w <= beam.x || b.x >= beam.x + beam.w).toBe(true);
+    }
+    const item = { ...createItem('bed'), params } as ProjectItem;
+    const results = buildItemResults([item]);
+    const hw = projectHardware(results, projectPieces(results), DEFAULT_MATERIALS);
+    expect(hw.find((h) => h.name === 'Rodízio para gavetão')?.quantity).toBe(16);
+    expect(hw.some((h) => h.name === 'Corrediça telescópica')).toBe(false);
+    expect(computeJoinery(m).steps.some((s) => s.title === 'Monte os gavetões')).toBe(true);
+  });
+
+  it('cama baixa demais avisa em vez de gerar gavetões', () => {
+    const m = buildBed({ ...bedParams(), deckHeight: 200, drawersPerSide: 1 });
+    expect(m.drawers).toHaveLength(0);
+    expect(m.warnings.join(' ')).toMatch(/gavetões/);
+  });
+
+  it('gavetões de um lado só', () => {
+    const m = buildBed({ ...bedParams(), deckHeight: 400, drawersPerSide: 3, drawerSides: 'direita' });
+    expect(m.drawers).toHaveLength(3);
+    const fronts = m.pieces.find((p) => p.role === 'drawer-front')!.instances;
+    expect(fronts.every((f) => f.x > m.overall.width / 2)).toBe(true);
+  });
+
+  it('arquivo preserva gaveteiro e gavetões e corrige valores inválidos', () => {
+    const bed = parseItem({ ...JSON.parse(JSON.stringify(createItem('bed'))), params: { ...bedParams(), drawersPerSide: 9, drawerSides: 'x' } });
+    expect((bed!.params as BedParams).drawersPerSide).toBe(3);
+    expect((bed!.params as BedParams).drawerSides).toBe('ambos');
+    const d = parseItem({ ...JSON.parse(JSON.stringify(createItem('desk'))), params: { ...(defaultItemParams('desk').params as object), pedestal: 'meio' } });
+    expect((d!.params as { pedestal: string }).pedestal).toBe('none');
+  });
+});

@@ -116,6 +116,9 @@ export const WORKBENCH: CabinetTemplate<WorkbenchParams> = {
     apronHeight: 150,
     lowerShelf: true,
     lowerShelfHeight: 150,
+    pedestal: 'none',
+    pedestalWidth: 400,
+    pedestalDrawers: 3,
     assembly: 'screw',
   },
 };
@@ -222,6 +225,9 @@ export const DESK: CabinetTemplate<WorkbenchParams> = {
     apronHeight: 200,
     lowerShelf: false,
     lowerShelfHeight: 150,
+    pedestal: 'right',
+    pedestalWidth: 400,
+    pedestalDrawers: 3,
     assembly: 'minifix',
   },
 };
@@ -243,6 +249,8 @@ export const BED: CabinetTemplate<BedParams> = {
     footboardHeight: 400,
     thickness: 18,
     deck: 'ripas',
+    drawersPerSide: 0,
+    drawerSides: 'ambos',
     assembly: 'screw',
   },
 };
