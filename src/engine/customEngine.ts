@@ -15,21 +15,31 @@ import type {
   CustomParams,
   CutPiece,
   DoorSpec,
+  DragHandle,
+  DrawerSpec,
   EdgeBanding,
   Joint,
   MaterialRole,
   PanelOrientation,
   PieceRole,
 } from '@/types/woodcraft';
-import { MIN_PIECE_SIZE } from './constants';
+import {
+  DRAWER_HEIGHT_CLEARANCE,
+  DRAWER_MIN_BOX_HEIGHT,
+  MIN_PIECE_SIZE,
+  SLIDE_CLEARANCE_PER_SIDE,
+  SLIDE_LENGTHS,
+  SLIDE_REAR_CLEARANCE,
+} from './constants';
 
 /** Tolerância para considerar que duas faces se encostam (mm). */
 const TOUCH_TOLERANCE = 0.5;
 
 const floorMm = (v: number) => Math.floor(v + 1e-6);
 
-/** Caixa 3D ocupada pelo painel. */
+/** Caixa 3D ocupada pelo painel (para a gaveta: o módulo inteiro, incluindo a frente). */
 export function panelBox(p: CustomPanel): Box3D {
+  if (p.kind === 'gaveta') return { x: p.x, y: p.y, z: p.z, w: p.width, h: p.height, d: p.depth + p.thickness };
   return {
     x: p.x,
     y: p.y,
@@ -42,6 +52,7 @@ export function panelBox(p: CustomPanel): Box3D {
 
 /** Medidas de corte: comprimento no sentido do veio (vertical em pé, largura quando deitado). */
 export function panelCutSize(p: CustomPanel): { length: number; width: number } {
+  if (p.kind === 'gaveta') return { length: p.width, width: p.height };
   switch (p.orientation) {
     case 'side':
       return { length: p.height, width: p.depth };
@@ -58,6 +69,7 @@ const ROLE: Record<CustomPanelKind, Record<PanelOrientation, PieceRole>> = {
   fundo: { side: 'back', front: 'back', horizontal: 'back' },
   porta: { side: 'door', front: 'door', horizontal: 'door' },
   frente: { side: 'drawer-front', front: 'drawer-front', horizontal: 'drawer-front' },
+  gaveta: { side: 'drawer-front', front: 'drawer-front', horizontal: 'drawer-front' },
 };
 
 const MATERIAL: Record<CustomPanelKind, MaterialRole> = {
@@ -66,6 +78,7 @@ const MATERIAL: Record<CustomPanelKind, MaterialRole> = {
   fundo: 'back',
   porta: 'front',
   frente: 'front',
+  gaveta: 'front',
 };
 
 export const PANEL_KIND_LABELS: Record<CustomPanelKind, string> = {
@@ -74,7 +87,101 @@ export const PANEL_KIND_LABELS: Record<CustomPanelKind, string> = {
   fundo: 'Fundo',
   porta: 'Porta',
   frente: 'Frente / painel aparente',
+  gaveta: 'Gaveta (módulo)',
 };
+
+/** Espessura da caixa e do fundo da gaveta do móvel livre. */
+const DRAWER_BOX_T = 15;
+const DRAWER_BOTTOM_T = 6;
+
+/** Maior corrediça comercial que cabe na profundidade do vão. */
+function slideFor(depth: number): number | null {
+  const fits = SLIDE_LENGTHS.filter((l) => l <= depth - SLIDE_REAR_CLEARANCE);
+  return fits.length ? fits[fits.length - 1]! : null;
+}
+
+interface Part {
+  name: string;
+  role: PieceRole;
+  material: MaterialRole;
+  length: number;
+  width: number;
+  thickness: number;
+  edgeBanding: EdgeBanding;
+  grain: 'length' | 'free';
+  box: Box3D;
+}
+
+/**
+ * Peças de um módulo de gaveta encaixado no vão (x, y, z, largura × profundidade):
+ * frente (3 mm menor que o vão), caixa com folga de corrediça e fundo pregado por baixo.
+ */
+export function drawerModule(p: CustomPanel): { parts: Part[]; spec: DrawerSpec; warnings: string[] } {
+  const warnings: string[] = [];
+  const Wo = p.width;
+  const Do = p.depth;
+  const Hf = p.height;
+  const slide = slideFor(Do);
+  if (slide === null) warnings.push(`"${p.name}": profundidade de ${Math.round(Do)} mm é pouca para corrediça (mín. ${250 + SLIDE_REAR_CLEARANCE} mm).`);
+  const L = slide ?? Math.max(MIN_PIECE_SIZE, Do - SLIDE_REAR_CLEARANCE);
+  const boxW = Wo - 2 * SLIDE_CLEARANCE_PER_SIDE;
+  const boxH = Math.max(DRAWER_MIN_BOX_HEIGHT, Hf - DRAWER_HEIGHT_CLEARANCE);
+  const bx = p.x + SLIDE_CLEARANCE_PER_SIDE;
+  const by = p.y + 10 + DRAWER_BOTTOM_T;
+  const bz = p.z + Do - L;
+  const edge1: EdgeBanding = { length: 1, width: 0 };
+  const parts: Part[] = [
+    {
+      name: 'Frente de gaveta',
+      role: 'drawer-front',
+      material: 'front',
+      length: Wo - 3,
+      width: Hf - 3,
+      thickness: p.thickness,
+      edgeBanding: p.edgeBanding,
+      grain: p.grainLocked ? 'length' : 'free',
+      box: { x: p.x + 1.5, y: p.y + 1.5, z: p.z + Do, w: Wo - 3, h: Hf - 3, d: p.thickness },
+    },
+    ...[bx, bx + boxW - DRAWER_BOX_T].map((x): Part => ({
+      name: 'Lateral da gaveta',
+      role: 'drawer-side',
+      material: 'drawer',
+      length: L,
+      width: boxH,
+      thickness: DRAWER_BOX_T,
+      edgeBanding: edge1,
+      grain: 'length',
+      box: { x, y: by, z: bz, w: DRAWER_BOX_T, h: boxH, d: L },
+    })),
+    ...[p.z + Do - DRAWER_BOX_T, bz].map((z): Part => ({
+      name: 'Contra-frente / traseira da gaveta',
+      role: 'drawer-back',
+      material: 'drawer',
+      length: boxW - 2 * DRAWER_BOX_T,
+      width: boxH,
+      thickness: DRAWER_BOX_T,
+      edgeBanding: edge1,
+      grain: 'length',
+      box: { x: bx + DRAWER_BOX_T, y: by, z, w: boxW - 2 * DRAWER_BOX_T, h: boxH, d: DRAWER_BOX_T },
+    })),
+    {
+      name: 'Fundo da gaveta',
+      role: 'drawer-bottom',
+      material: 'back',
+      length: L,
+      width: boxW,
+      thickness: DRAWER_BOTTOM_T,
+      edgeBanding: { length: 0, width: 0 },
+      grain: 'free',
+      box: { x: bx, y: by - DRAWER_BOTTOM_T, z: bz, w: boxW, h: DRAWER_BOTTOM_T, d: L },
+    },
+  ];
+  return {
+    parts,
+    spec: { frontWidth: floorMm(Wo - 3), frontHeight: floorMm(Hf - 3), boxWidth: floorMm(boxW), boxHeight: floorMm(boxH), slideLength: L },
+    warnings,
+  };
+}
 
 /** Sobreposição de dois intervalos [a0, a1] e [b0, b1]. */
 const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.min(a1, b1) - Math.max(a0, b0);
@@ -116,45 +223,71 @@ export function buildCustom(params: CustomParams): AssembledModel {
 
   // --- Peças (painéis idênticos viram uma linha com quantidade) --------------------------
   const groups = new Map<string, CutPiece>();
-  for (const p of panels) {
-    const { length, width } = panelCutSize(p);
-    const role = ROLE[p.kind][p.orientation];
-    const material = MATERIAL[p.kind];
-    const edgeBanding: EdgeBanding = p.edgeBanding;
-    const grain = p.grainLocked && p.kind !== 'fundo' ? 'length' : 'free';
-    const L = floorMm(length);
-    const W = floorMm(width);
-    // "Lateral 1" e "Lateral 2" iguais viram uma linha "Lateral" × 2 na lista de corte.
-    const name = p.name.trim().replace(/\s+\d+$/, '') || PANEL_KIND_LABELS[p.kind];
-    const key = [name, role, material, L, W, p.thickness, edgeBanding.length, edgeBanding.width, grain].join('|');
+  const handles: DragHandle[] = [];
+  const drawers: DrawerSpec[] = [];
+  const joints: Joint[] = [];
+
+  const addPart = (part: Part, panelId: string) => {
+    const L = floorMm(part.length);
+    const W = floorMm(part.width);
+    const key = [part.name, part.role, part.material, L, W, part.thickness, part.edgeBanding.length, part.edgeBanding.width, part.grain].join('|');
+    const box = part.box;
+    handles.push({ kind: 'panel', box, panelId });
     const existing = groups.get(key);
     if (existing) {
       existing.quantity += 1;
-      existing.instances.push(panelBox(p));
-      existing.sourceIds!.push(p.id);
-    } else {
-      groups.set(key, {
-        id: '',
-        name,
-        role,
-        material,
-        quantity: 1,
-        length: L,
-        width: W,
-        thickness: p.thickness,
-        edgeBanding,
-        grain,
-        instances: [panelBox(p)],
-        sourceIds: [p.id],
-      });
+      existing.instances.push(box);
+      if (!existing.sourceIds!.includes(panelId)) existing.sourceIds!.push(panelId);
+      return;
     }
+    groups.set(key, {
+      id: '',
+      name: part.name,
+      role: part.role,
+      material: part.material,
+      quantity: 1,
+      length: L,
+      width: W,
+      thickness: part.thickness,
+      edgeBanding: part.edgeBanding,
+      grain: part.grain,
+      instances: [box],
+      sourceIds: [panelId],
+    });
+  };
+
+  for (const p of panels) {
+    if (p.kind === 'gaveta') {
+      const module = drawerModule(p);
+      module.parts.forEach((part) => addPart(part, p.id));
+      drawers.push(module.spec);
+      warnings.push(...module.warnings);
+      for (let c = 0; c < 4; c++) joints.push({ label: 'Canto de gaveta', length: module.spec.boxHeight });
+      continue;
+    }
+    const { length, width } = panelCutSize(p);
+    addPart(
+      {
+        // "Lateral 1" e "Lateral 2" iguais viram uma linha "Lateral" × 2 na lista de corte.
+        name: p.name.trim().replace(/\s+\d+$/, '') || PANEL_KIND_LABELS[p.kind],
+        role: ROLE[p.kind][p.orientation],
+        material: MATERIAL[p.kind],
+        length,
+        width,
+        thickness: p.thickness,
+        edgeBanding: p.edgeBanding,
+        grain: p.grainLocked && p.kind !== 'fundo' ? 'length' : 'free',
+        box: panelBox(p),
+      },
+      p.id,
+    );
   }
   const pieces = [...groups.values()].map((piece, i) => ({ ...piece, id: `painel-${i + 1}` }));
   const pieceOf = new Map(pieces.flatMap((piece) => piece.sourceIds!.map((sid) => [sid, piece.id] as const)));
 
   // --- Junções automáticas e sobreposições -------------------------------------------------
-  const joints: Joint[] = [];
   const structural = panels.filter((p) => p.kind === 'estrutura');
+  let structuralJoints = 0;
   for (let i = 0; i < structural.length; i++) {
     for (let j = i + 1; j < structural.length; j++) {
       const a = structural[i]!;
@@ -166,10 +299,13 @@ export function buildCustom(params: CustomParams): AssembledModel {
         continue;
       }
       const length = contactLength(boxA, boxB);
-      if (length !== null) joints.push({ label: `${a.name} × ${b.name}`, length });
+      if (length !== null) {
+        joints.push({ label: `${a.name} × ${b.name}`, length });
+        structuralJoints++;
+      }
     }
   }
-  if (structural.length > 1 && joints.length === 0) {
+  if (structural.length > 1 && structuralJoints === 0) {
     warnings.push('Nenhum painel de estrutura encosta em outro: posicione as peças para que se toquem (as junções são calculadas pelo contato).');
   }
 
@@ -204,7 +340,7 @@ export function buildCustom(params: CustomParams): AssembledModel {
     overall,
     pieces,
     doors,
-    drawers: [],
+    drawers,
     joints,
     adjustableShelves,
     hangingRods: [],
@@ -212,6 +348,7 @@ export function buildCustom(params: CustomParams): AssembledModel {
     baseType: 'none',
     assembly: params.assembly,
     layout: { columns: [], plinthHeight: 0, internalDepth: overall.depth },
+    handles,
     warnings,
   };
 }
@@ -223,12 +360,13 @@ export function buildCustom(params: CustomParams): AssembledModel {
 let panelSeq = 0;
 export const newPanelId = () => `p${Date.now().toString(36)}${(panelSeq++).toString(36)}`;
 
-export type PanelPreset = 'lateral' | 'horizontal' | 'prateleira' | 'fundo' | 'porta' | 'livre';
+export type PanelPreset = 'lateral' | 'horizontal' | 'prateleira' | 'gaveta' | 'fundo' | 'porta' | 'livre';
 
 export const PANEL_PRESETS: Array<{ id: PanelPreset; label: string; hint: string }> = [
   { id: 'lateral', label: 'Lateral', hint: 'Painel em pé, de lado, à direita do que já existe' },
   { id: 'horizontal', label: 'Base / tampo', hint: 'Painel deitado, em cima do que já existe' },
   { id: 'prateleira', label: 'Prateleira', hint: 'Prateleira móvel no meio da altura' },
+  { id: 'gaveta', label: 'Gaveta', hint: 'Gaveta com corrediça encaixada entre as laterais, empilhada sobre a base' },
   { id: 'fundo', label: 'Fundo', hint: 'Fundo de 6 mm atrás do móvel' },
   { id: 'porta', label: 'Porta', hint: 'Porta cobrindo a frente do móvel' },
   { id: 'livre', label: 'Painel livre', hint: 'Painel frontal de 600 × 400 mm' },
@@ -297,6 +435,41 @@ export function createPanel(preset: PanelPreset, existing: CustomPanel[], thickn
         y: Math.round(B.y0 + H / 2),
         z: B.z0,
       };
+    case 'gaveta': {
+      let x = B.x0;
+      let width = W;
+      let depth = D;
+      let z = B.z0;
+      const inSpan: CustomPanel[] = [];
+      if (sides.length >= 2) {
+        const left = sides.reduce((a, b) => (b.x < a.x ? b : a));
+        const right = sides.reduce((a, b) => (b.x > a.x ? b : a));
+        x = left.x + left.thickness;
+        width = right.x - x;
+        depth = Math.max(...sides.map((p) => p.depth));
+        z = Math.min(...sides.map((p) => p.z));
+        inSpan.push(...existing.filter((p) => p.x >= x - 1 && p.x < right.x));
+      }
+      // Empilha sobre a peça mais alta abaixo do tampo (base, prateleira fixa ou outra gaveta).
+      const tops = inSpan
+        .filter((p) => p.kind === 'gaveta' || (p.kind === 'estrutura' && p.orientation === 'horizontal'))
+        .map((p) => p.y + (p.kind === 'gaveta' ? p.height : p.thickness))
+        .filter((top) => top < B.y1 - 0.5);
+      const y = tops.length ? Math.max(...tops) : B.y0;
+      return {
+        ...base,
+        name: `Gaveta ${count('Gaveta')}`,
+        kind: 'gaveta',
+        orientation: 'front',
+        width,
+        height: 180,
+        depth,
+        x,
+        y,
+        z,
+        edgeBanding: { length: 2, width: 2 },
+      };
+    }
     case 'fundo':
       return { ...base, name: 'Fundo', kind: 'fundo', orientation: 'front', thickness: 6, width: W, height: H, depth: D, x: B.x0, y: B.y0, z: B.z0 - 6, edgeBanding: { length: 0, width: 0 }, grainLocked: false };
     case 'porta':

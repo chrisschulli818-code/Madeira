@@ -56,6 +56,11 @@ export interface ColumnConfig {
    * Opcional para compatibilidade com projetos salvos antes deste campo (= 'top').
    */
   drawerPosition?: 'top' | 'bottom';
+  /**
+   * Posições manuais das prateleiras móveis (mm, da face de cima da peça de baixo do vão até a
+   * face de baixo da prateleira). Definidas ao arrastar; ignoradas se não baterem com `shelves`.
+   */
+  shelfPositions?: number[];
   /** Folhas de porta: 0 (vão aberto/sem porta), 1 ou 2. */
   doors: 0 | 1 | 2;
   /** Prateleiras móveis na região das portas (ou do vão aberto). */
@@ -122,9 +127,13 @@ export type PanelOrientation =
   | 'horizontal';
 
 /** Função do painel no móvel livre (define material, fita e ferragens). */
-export type CustomPanelKind = 'estrutura' | 'prateleira' | 'fundo' | 'porta' | 'frente';
+export type CustomPanelKind = 'estrutura' | 'prateleira' | 'fundo' | 'porta' | 'frente' | 'gaveta';
 
-/** Painel do móvel livre, posicionado manualmente. */
+/**
+ * Painel do móvel livre, posicionado manualmente.
+ * Para `kind: 'gaveta'` o registro descreve o módulo de gaveta: largura do vão (width),
+ * altura da frente (height), profundidade do vão (depth) e espessura da frente (thickness).
+ */
 export interface CustomPanel {
   id: string;
   name: string;
@@ -272,6 +281,31 @@ export interface Joint {
   bracket?: boolean;
 }
 
+/** Faixa vertical onde as prateleiras móveis de um vão podem ficar. */
+export interface ShelfRegion {
+  /** Face de cima da peça de baixo (base ou prateleira fixa). */
+  bottom: number;
+  /** Face de baixo da peça de cima (tampo, travessa ou prateleira fixa). */
+  top: number;
+  /** Aceita prateleiras (vão só de gavetas não aceita). */
+  acceptsShelves: boolean;
+  /** Posições atuais das prateleiras (offset a partir de `bottom`, crescente). */
+  shelves: number[];
+}
+
+/** Peça que pode ser arrastada no viewport (prateleira, gaveta ou painel do móvel livre). */
+export interface DragHandle {
+  kind: 'shelf' | 'drawer' | 'panel';
+  /** Instância 3D correspondente (mesma referência de `CutPiece.instances`). */
+  box: Box3D;
+  /** Vão (móveis de caixa). */
+  column?: number;
+  /** Índice da prateleira/gaveta dentro do vão. */
+  index?: number;
+  /** Painel do móvel livre. */
+  panelId?: string;
+}
+
 export interface AssembledModel {
   templateId: TemplateId;
   overall: { width: number; height: number; depth: number };
@@ -291,7 +325,11 @@ export interface AssembledModel {
     columns: Array<[number, number]>;
     plinthHeight: number;
     internalDepth: number;
+    /** Região de prateleiras de cada vão (móveis de caixa). */
+    regions?: ShelfRegion[];
   };
+  /** Peças que podem ser arrastadas e encaixadas no viewport. */
+  handles?: DragHandle[];
   warnings: string[];
 }
 

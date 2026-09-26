@@ -2,7 +2,8 @@
  * Vista 2D ortogonal (frontal ou lateral) em SVG, com cotas dimensionais.
  * Reutilizada no viewport interativo e no relatório impresso.
  */
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
+import type { PieceDrag } from '@/hooks/useDragPieces';
 import type { AssembledModel, Box3D, CutPiece } from '@/types/woodcraft';
 import { HIGHLIGHT_COLOR, MATERIAL_COLORS, SELECT_COLOR } from '@/lib/pieceColors';
 import { fmt } from '@/lib/utils';
@@ -18,6 +19,8 @@ interface Props {
   onHover?: (id: string | null) => void;
   onSelect?: (id: string | null) => void;
   className?: string;
+  /** Arrastar peças (somente na vista frontal). */
+  drag?: PieceDrag;
 }
 
 interface Drawn {
@@ -75,7 +78,10 @@ function Dim({
   );
 }
 
-export function Elevation2D({ model, view, showFronts = true, hoveredId, selectedId, onHover, onSelect, className }: Props) {
+export function Elevation2D({ model, view, showFronts = true, hoveredId, selectedId, onHover, onSelect, className, drag }: Props) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  /** O clique que acontece ao soltar um arraste não deve (des)selecionar a peça. */
+  const justDragged = useRef(false);
   const { width: W, height: H, depth: D } = model.overall;
   const frontThickness = model.pieces.find((p) => FRONT_ROLES.has(p.role))?.thickness ?? 0;
   const spanX = view === 'front' ? W : D + frontThickness;
@@ -97,6 +103,36 @@ export function Elevation2D({ model, view, showFronts = true, hoveredId, selecte
   }
 
   const text = Math.max(spanX, H) / 24;
+
+  /** Ponto do ponteiro em mm da vista frontal. */
+  const toMm = (ev: { clientX: number; clientY: number }) => {
+    const svg = svgRef.current;
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return null;
+    const pt = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(ctm.inverse());
+    return { x: pt.x, y: H - pt.y };
+  };
+
+  const startDrag = (box: Box3D, ev: React.PointerEvent) => {
+    const point = toMm(ev);
+    if (!drag || view !== 'front' || ev.button !== 0 || !point || !drag.start(box, point)) return;
+    ev.preventDefault();
+    justDragged.current = true;
+    const onMove = (e: PointerEvent) => {
+      const p = toMm(e);
+      if (p) drag.move(p);
+    };
+    const onUp = () => {
+      drag.end();
+      setTimeout(() => (justDragged.current = false), 0);
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    document.body.style.cursor = 'grabbing';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
   const pad = text * 5;
   const toRect = (b: Box3D) =>
     view === 'front' ? { x: b.x, y: H - b.y - b.h, w: b.w, h: b.h } : { x: b.z, y: H - b.y - b.h, w: b.d, h: b.h };
@@ -105,6 +141,7 @@ export function Elevation2D({ model, view, showFronts = true, hoveredId, selecte
 
   return (
     <svg
+      ref={svgRef}
       viewBox={`${-pad} ${-pad} ${spanX + 2 * pad} ${H + 2 * pad}`}
       className={className}
       role="img"
@@ -117,6 +154,7 @@ export function Elevation2D({ model, view, showFronts = true, hoveredId, selecte
         const r = toRect(box);
         const active = piece.id === hoveredId;
         const selected = piece.id === selectedId;
+        const draggable = view === 'front' && !!drag?.canDrag(box);
         return (
           <rect
             key={key}
@@ -129,8 +167,9 @@ export function Elevation2D({ model, view, showFronts = true, hoveredId, selecte
             strokeWidth={active || selected ? 2 : 0.75}
             vectorEffect="non-scaling-stroke"
             onMouseEnter={() => onHover?.(piece.id)}
-            onClick={() => onSelect?.(selected ? null : piece.id)}
-            style={{ cursor: onHover ? 'pointer' : undefined }}
+            onClick={() => !justDragged.current && onSelect?.(selected ? null : piece.id)}
+            onPointerDown={draggable ? (e) => startDrag(box, e) : undefined}
+            style={{ cursor: draggable ? 'grab' : onHover ? 'pointer' : undefined, touchAction: draggable ? 'none' : undefined }}
           >
             <title>{`${piece.name} — ${piece.length} × ${piece.width} × ${piece.thickness} mm`}</title>
           </rect>

@@ -107,10 +107,13 @@ function parseColumn(raw: unknown): ColumnConfig {
     shelves: Math.max(0, Math.floor(numOr(c.shelves, 0))),
     hangingRod: boolOr(c.hangingRod, false),
     drawerPosition: c.drawerPosition === 'bottom' ? 'bottom' : 'top',
+    ...(Array.isArray(c.shelfPositions) && c.shelfPositions.every((v) => typeof v === 'number' && Number.isFinite(v))
+      ? { shelfPositions: c.shelfPositions as number[] }
+      : {}),
   });
 }
 
-const PANEL_KINDS = ['estrutura', 'prateleira', 'fundo', 'porta', 'frente'] as const;
+const PANEL_KINDS = ['estrutura', 'prateleira', 'fundo', 'porta', 'frente', 'gaveta'] as const;
 const ORIENTATIONS = ['side', 'front', 'horizontal'] as const;
 const edgeCount = (v: unknown): 0 | 1 | 2 => (v === 1 || v === 2 ? v : 0);
 

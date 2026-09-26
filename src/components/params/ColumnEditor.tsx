@@ -73,9 +73,17 @@ export function ColumnEditor({ params, showRod }: { params: CabinetParams; showR
               ]}
             />
           </FieldRow>
-          <FieldRow label="Prateleiras móveis">
+          <FieldRow
+            label="Prateleiras móveis"
+            hint={col.shelfPositions ? 'Posições ajustadas à mão (arrastando no 3D ou na vista frontal).' : undefined}
+          >
             <Stepper value={col.shelves} max={10} onChange={(v) => updateColumn(col.id, { shelves: v })} aria-label="Prateleiras" />
           </FieldRow>
+          {col.shelfPositions && (
+            <Button variant="ghost" size="sm" className="h-7 w-full text-xs" onClick={() => updateColumn(col.id, { shelfPositions: undefined })}>
+              Redistribuir prateleiras igualmente
+            </Button>
+          )}
           {showRod && (
             <FieldRow label="Cabideiro">
               <Switch checked={col.hangingRod} onCheckedChange={(v) => updateColumn(col.id, { hangingRod: v })} aria-label="Cabideiro" />

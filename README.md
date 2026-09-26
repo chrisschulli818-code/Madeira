@@ -17,6 +17,10 @@ A partir das medidas externas e das opções de construção, gera automaticamen
 
 - **Móvel livre (do zero)**: comece com a tela em branco e monte o móvel painel por painel (medidas, espessura,
   posição, função e fita). As junções são detectadas pelo contato entre painéis de estrutura;
+- **Arrastar e encaixar**: prateleiras e gavetas podem ser arrastadas no 3D ou na vista frontal. Nos móveis prontos,
+  a prateleira desliza em passos de 32 mm (furação sistema 32) e pode mudar de vão; a gaveta muda de vão e encaixa em
+  cima ou embaixo. No móvel livre, prateleiras, painéis e **gavetas (módulo com corrediça)** se ajustam à largura entre
+  as laterais e apoiam sobre a peça de baixo, sem se sobrepor;
 - **Tela expandida**: esconde cabeçalho e abas e deixa só o editor e o 3D (botão **Expandir**, Esc para sair).
   **Novo → Do zero** já abre o projeto em branco nesse modo.
 
@@ -65,7 +69,8 @@ src/
 │   ├── nestingEngine.ts        # Otimizador de chapas: guilhotina 2D multi-heurística
 │   ├── hardwareEngine.ts       # Quantitativo de ferragens, fixadores e fita de borda
 │   ├── toolsEngine.ts          # Ferramentas essenciais/opcionais conforme o projeto
-│   ├── customEngine.ts         # Móvel livre: painéis posicionados à mão, junções por contato
+│   ├── customEngine.ts         # Móvel livre: painéis posicionados à mão, junções por contato, gavetas
+│   ├── dragEngine.ts           # Arrastar e encaixar (sistema 32, ímã entre faces, ajuste ao vão)
 │   ├── projectEngine.ts        # Soma vários móveis: peças, plano de corte, ferragens, ferramentas
 │   ├── budgetEngine.ts         # Orçamento (chapas, insumos, serviços, mão de obra, margem)
 │   ├── pricing.ts              # Preços de referência (R$)

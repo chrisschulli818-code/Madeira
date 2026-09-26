@@ -58,6 +58,8 @@ export interface ProjectState extends ProjectData {
   removeItem: (id: string) => void;
   setActiveItem: (id: string) => void;
   updateItem: (id: string, patch: { name?: string; quantity?: number }) => void;
+  /** Substitui um móvel inteiro (usado ao arrastar e encaixar peças). */
+  replaceItem: (item: ProjectItem) => void;
   // Parâmetros do móvel ativo
   updateCabinet: (patch: Partial<CabinetParams>) => void;
   updateColumn: (columnId: string, patch: Partial<ColumnConfig>) => void;
@@ -168,9 +170,25 @@ export const useProjectStore = create<ProjectState>()(
             ),
           })),
 
+        replaceItem: (item) =>
+          set((s) => {
+            const current = s.items.find((i) => i.id === item.id);
+            if (!current || current === item || JSON.stringify(current.params) === JSON.stringify(item.params)) return {};
+            return { items: s.items.map((i) => (i.id === item.id ? item : i)) };
+          }),
+
         updateCabinet: (patch) => patchCabinet((p) => ({ ...p, ...patch })),
         updateColumn: (columnId, patch) =>
-          patchCabinet((p) => ({ ...p, columns: p.columns.map((c) => (c.id === columnId ? { ...c, ...patch } : c)) })),
+          patchCabinet((p) => ({
+            ...p,
+            columns: p.columns.map((c) => {
+              if (c.id !== columnId) return c;
+              const next = { ...c, ...patch };
+              // Mudou a quantidade de prateleiras: volta a distribuir automaticamente.
+              if (patch.shelves !== undefined && patch.shelves !== c.shelves) delete next.shelfPositions;
+              return next;
+            }),
+          })),
         addColumn: () => patchCabinet((p) => ({ ...p, columns: [...p.columns, makeColumn({ doors: 1, shelves: 1 })] })),
         removeColumn: (columnId) =>
           patchCabinet((p) => (p.columns.length <= 1 ? p : { ...p, columns: p.columns.filter((c) => c.id !== columnId) })),

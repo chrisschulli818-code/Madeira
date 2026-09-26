@@ -47,8 +47,10 @@ function PanelCard({ panel, selected, onSelect }: { panel: CustomPanel; selected
   }, [selected]);
 
   // Medidas visíveis conforme a orientação (a terceira é a espessura).
-  const dims =
-    panel.orientation === 'side'
+  const isDrawer = panel.kind === 'gaveta';
+  const dims = isDrawer
+    ? [['Largura do vão', 'width'], ['Altura da frente', 'height'], ['Profund. do vão', 'depth']]
+    : panel.orientation === 'side'
       ? [['Altura (Y)', 'height'], ['Profund. (Z)', 'depth']]
       : panel.orientation === 'front'
         ? [['Largura (X)', 'width'], ['Altura (Y)', 'height']]
@@ -87,7 +89,12 @@ function PanelCard({ panel, selected, onSelect }: { panel: CustomPanel; selected
               value={panel.kind}
               onChange={(e) => {
                 const kind = e.target.value as CustomPanelKind;
-                set({ kind, ...(kind === 'fundo' ? { edgeBanding: { length: 0, width: 0 }, grainLocked: false } : {}), ...(kind === 'porta' || kind === 'frente' ? { edgeBanding: { length: 2, width: 2 } } : {}) });
+                set({
+                  kind,
+                  ...(kind === 'fundo' ? { edgeBanding: { length: 0, width: 0 }, grainLocked: false } : {}),
+                  ...(kind === 'porta' || kind === 'frente' || kind === 'gaveta' ? { edgeBanding: { length: 2, width: 2 } } : {}),
+                  ...(kind === 'gaveta' ? { orientation: 'front' as const, height: Math.min(panel.height, 250), thickness: 18 } : {}),
+                });
               }}
               aria-label="Função do painel"
               className="h-8 rounded-md border border-border bg-surface px-2 text-sm focus:border-primary focus:outline-none"
@@ -99,18 +106,27 @@ function PanelCard({ panel, selected, onSelect }: { panel: CustomPanel; selected
               ))}
             </select>
           </FieldRow>
-          <div className="space-y-1">
-            <span className="text-xs font-medium text-subtle">Orientação</span>
-            <Segmented aria-label="Orientação" className="w-full" value={panel.orientation} onChange={(orientation) => set({ orientation })} options={ORIENTATION_OPTIONS} />
-          </div>
-          <div className="grid grid-cols-3 gap-2">
+          {isDrawer ? (
+            <p className="text-[11px] leading-snug text-subtle">
+              Módulo com frente, caixa de gaveta e corrediça telescópica. Arraste no 3D ou na vista frontal: ele encaixa entre as
+              laterais e sobre a peça de baixo.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              <span className="text-xs font-medium text-subtle">Orientação</span>
+              <Segmented aria-label="Orientação" className="w-full" value={panel.orientation} onChange={(orientation) => set({ orientation })} options={ORIENTATION_OPTIONS} />
+            </div>
+          )}
+          <div className={cn('grid gap-2', isDrawer ? 'grid-cols-2' : 'grid-cols-3')}>
             {dims.map(([label, key]) => (
               <Num key={key} label={label!} value={panel[key as 'width' | 'height' | 'depth']} min={1} onChange={(v) => set({ [key as string]: v })} />
             ))}
-            <Num label="Espessura" value={panel.thickness} min={1} max={100} onChange={(thickness) => set({ thickness })} />
+            <Num label={isDrawer ? 'Espessura da frente' : 'Espessura'} value={panel.thickness} min={1} max={100} onChange={(thickness) => set({ thickness })} />
           </div>
           <div className="space-y-1">
-            <span className="text-xs font-medium text-subtle">Posição do canto inferior esquerdo traseiro (mm)</span>
+            <span className="text-xs font-medium text-subtle">
+              {isDrawer ? 'Posição do vão: canto inferior esquerdo traseiro (mm)' : 'Posição do canto inferior esquerdo traseiro (mm)'}
+            </span>
             <div className="grid grid-cols-3 gap-2">
               <Num label="X (→)" value={panel.x} min={-5000} onChange={(x) => set({ x })} />
               <Num label="Y (↑)" value={panel.y} min={-5000} onChange={(y) => set({ y })} />
@@ -199,7 +215,8 @@ export function CustomPanelEditor({ params, itemId }: { params: CustomParams; it
           </div>
         </div>
         <p className="text-[11px] leading-snug text-subtle">
-          Eixos: X da esquerda para a direita, Y do chão para cima, Z do fundo para a frente. Painéis de estrutura que se encostam
+          Arraste as peças no 3D ou na vista frontal: prateleiras e gavetas se encaixam entre as laterais e sobre as peças
+          vizinhas. Eixos: X da esquerda para a direita, Y do chão para cima, Z do fundo para a frente. Painéis de estrutura que se encostam
           viram junções automaticamente (parafusos/minifix/cavilhas na lista de compras).
         </p>
       </Section>
