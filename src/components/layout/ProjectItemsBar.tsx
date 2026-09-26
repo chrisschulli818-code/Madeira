@@ -7,6 +7,7 @@ import { useProjectStore } from '@/store/projectStore';
 import { TEMPLATE_LIST } from '@/engine/templates';
 import { Button } from '@/components/ui/button';
 import { Dropdown, MenuItem } from '@/components/ui/dropdown';
+import { Segmented } from '@/components/params/fields';
 import { cn } from '@/lib/utils';
 import type { TemplateId } from '@/types/woodcraft';
 
@@ -54,10 +55,21 @@ export function ProjectItemsBar() {
   const setActiveItem = useProjectStore((s) => s.setActiveItem);
   const duplicateItem = useProjectStore((s) => s.duplicateItem);
   const removeItem = useProjectStore((s) => s.removeItem);
+  const viewMode = useProjectStore((s) => s.viewMode);
+  const setViewMode = useProjectStore((s) => s.setViewMode);
 
   return (
     <nav aria-label="Móveis do projeto" className="flex items-center gap-2 border-b border-border bg-surface/70 px-3 py-2">
-      <span className="hidden shrink-0 text-xs font-medium uppercase tracking-wide text-subtle md:inline">Móveis</span>
+      <Segmented
+        aria-label="Modo"
+        className="shrink-0"
+        value={viewMode}
+        onChange={setViewMode}
+        options={[
+          { value: 'furniture', label: 'Móvel', title: 'Editar o móvel selecionado' },
+          { value: 'room', label: 'Ambiente', title: 'Posicionar todos os móveis no cômodo' },
+        ]}
+      />
       <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-0.5">
         {items.map((item) => {
           const active = item.id === activeItemId;
@@ -66,12 +78,15 @@ export function ProjectItemsBar() {
               key={item.id}
               className={cn(
                 'flex shrink-0 items-center rounded-md border transition-colors',
-                active ? 'border-primary/40 bg-primary-soft text-primary-hover' : 'border-border bg-surface text-subtle hover:text-foreground',
+                active && viewMode === 'furniture' ? 'border-primary/40 bg-primary-soft text-primary-hover' : 'border-border bg-surface text-subtle hover:text-foreground',
               )}
             >
               <button
                 type="button"
-                onClick={() => setActiveItem(item.id)}
+                onClick={() => {
+                  setActiveItem(item.id);
+                  setViewMode('furniture');
+                }}
                 aria-pressed={active}
                 className="flex items-center gap-1.5 py-1.5 pl-2.5 pr-2 text-sm font-medium [&_svg]:size-4"
               >
@@ -79,7 +94,7 @@ export function ProjectItemsBar() {
                 <span className="max-w-44 truncate">{item.name || 'Sem nome'}</span>
                 {item.quantity > 1 && <span className="rounded bg-white/70 px-1 text-[11px] tabular-nums">×{item.quantity}</span>}
               </button>
-              {active && (
+              {active && viewMode === 'furniture' && (
                 <span className="flex items-center pr-1">
                   <button type="button" title="Duplicar móvel" aria-label="Duplicar móvel" onClick={() => duplicateItem(item.id)} className="grid size-6 place-items-center rounded hover:bg-white/70">
                     <Copy className="size-3.5" />

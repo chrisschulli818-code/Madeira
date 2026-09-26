@@ -84,7 +84,7 @@ export function Viewport() {
           </TabsContent>
 
           {canMove && (
-            <div className="pointer-events-none absolute right-3 top-3 flex max-w-64 items-start gap-1.5 rounded-md border border-border bg-surface/90 px-2.5 py-1.5 text-[11px] leading-snug text-subtle shadow-sm">
+            <div className="pointer-events-none absolute right-3 top-3 hidden max-w-64 items-start gap-1.5 rounded-md border border-border bg-surface/90 px-2.5 py-1.5 text-[11px] leading-snug text-subtle shadow-sm sm:flex">
               <Hand className="mt-px size-3.5 shrink-0 text-primary" />
               {explode > 0
                 ? 'Feche a vista explodida para arrastar peças.'

@@ -12,6 +12,7 @@ import { slugify } from '@/lib/utils';
 export function useExportPdf() {
   const results = useResults();
   const projectName = useProjectStore((s) => s.projectName);
+  const room = useProjectStore((s) => s.room);
   const [exporting, setExporting] = useState(false);
 
   const exportPdf = async () => {
@@ -22,6 +23,8 @@ export function useExportPdf() {
         ...results,
         projectName: projectName || 'Projeto',
         date: new Date(),
+        room,
+        placements: results.placements,
         items: results.items.map(({ item, model }) => ({
           name: item.name,
           templateName: TEMPLATES[item.templateId].name,

@@ -8,10 +8,10 @@ export function useProjectFile() {
   const newProjectAction = useProjectStore((s) => s.newProject);
 
   const saveProject = () => {
-    const { projectName, items, sheet, materials, services, prices } = useProjectStore.getState();
+    const { projectName, items, sheet, materials, services, prices, room, placements } = useProjectStore.getState();
     downloadFile(
       `${slugify(projectName)}${PROJECT_FILE_EXTENSION}`,
-      serializeProject({ projectName, items, sheet, materials, services, prices }),
+      serializeProject({ projectName, items, sheet, materials, services, prices, room, placements }),
       'application/json',
       false,
     );

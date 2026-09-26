@@ -3,6 +3,7 @@ import { buildCustom, contactLength, createPanel, panelBox } from '../customEngi
 import { computeHardware } from '../hardwareEngine';
 import { parseProjectFile, serializeProject, createItem, DEFAULT_MATERIALS, DEFAULT_SERVICES, DEFAULT_SHEET } from '../projectFile';
 import { DEFAULT_PRICES } from '../budgetEngine';
+import { DEFAULT_ROOM } from '../roomEngine';
 import type { CustomPanel, ProjectItem } from '@/types/woodcraft';
 
 /** Caixa simples montada à mão: 2 laterais, base e tampo entre elas, fundo e porta. */
@@ -90,7 +91,7 @@ describe('móvel livre', () => {
   it('salva e abre projeto com móvel livre', () => {
     const item: ProjectItem = { ...createItem('custom'), templateId: 'custom', params: { panels: simpleBox(), assembly: 'minifix' } };
     const parsed = parseProjectFile(
-      serializeProject({ projectName: 'Do zero', items: [item], sheet: DEFAULT_SHEET, materials: DEFAULT_MATERIALS, services: DEFAULT_SERVICES, prices: DEFAULT_PRICES }),
+      serializeProject({ projectName: 'Do zero', items: [item], sheet: DEFAULT_SHEET, materials: DEFAULT_MATERIALS, services: DEFAULT_SERVICES, prices: DEFAULT_PRICES, room: DEFAULT_ROOM, placements: [] }),
     );
     expect(parsed.ok && parsed.data.items[0]).toEqual(item);
   });

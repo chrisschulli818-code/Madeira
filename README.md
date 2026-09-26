@@ -21,6 +21,10 @@ A partir das medidas externas e das opções de construção, gera automaticamen
   a prateleira desliza em passos de 32 mm (furação sistema 32) e pode mudar de vão; a gaveta muda de vão e encaixa em
   cima ou embaixo. No móvel livre, prateleiras, painéis e **gavetas (módulo com corrediça)** se ajustam à largura entre
   as laterais e apoiam sobre a peça de baixo, sem se sobrepor;
+- **Ambiente (cômodo)**: defina largura, profundidade, pé-direito, portas e janelas e posicione todos os móveis do
+  projeto na **planta** ou no **3D**. Ao arrastar, o móvel encosta e gira de costas para a parede mais próxima, encaixa
+  nos cantos, alinha lado a lado com os vizinhos e não se sobrepõe (aéreos passam por cima dos balcões). Há botões para
+  girar e encostar numa parede, e avisos de porta bloqueada, móvel sobreposto ou fora do cômodo. O PDF traz a planta;
 - **Tela expandida**: esconde cabeçalho e abas e deixa só o editor e o 3D (botão **Expandir**, Esc para sair).
   **Novo → Do zero** já abre o projeto em branco nesse modo.
 
@@ -70,6 +74,7 @@ src/
 │   ├── hardwareEngine.ts       # Quantitativo de ferragens, fixadores e fita de borda
 │   ├── toolsEngine.ts          # Ferramentas essenciais/opcionais conforme o projeto
 │   ├── customEngine.ts         # Móvel livre: painéis posicionados à mão, junções por contato, gavetas
+│   ├── roomEngine.ts           # Ambiente: posições automáticas, encaixe nas paredes/vizinhos, avisos
 │   ├── dragEngine.ts           # Arrastar e encaixar (sistema 32, ímã entre faces, ajuste ao vão)
 │   ├── projectEngine.ts        # Soma vários móveis: peças, plano de corte, ferragens, ferramentas
 │   ├── budgetEngine.ts         # Orçamento (chapas, insumos, serviços, mão de obra, margem)

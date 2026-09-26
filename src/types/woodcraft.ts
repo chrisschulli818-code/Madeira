@@ -503,3 +503,72 @@ export interface Budget {
   /** Preço final sugerido (custo + margem). */
   price: number;
 }
+
+// ---------------------------------------------------------------------------
+// Ambiente (cômodo com vários móveis)
+// ---------------------------------------------------------------------------
+
+/**
+ * Paredes do cômodo vistas de cima (planta): `fundo` no topo da planta (z = 0),
+ * `frente` embaixo (z = profundidade), `esquerda` (x = 0) e `direita` (x = largura).
+ */
+export type WallSide = 'fundo' | 'frente' | 'esquerda' | 'direita';
+
+/** Porta ou janela numa parede. */
+export interface RoomOpening {
+  id: string;
+  kind: 'porta' | 'janela';
+  wall: WallSide;
+  /**
+   * Posição ao longo da parede na planta (mm): a partir de x = 0 nas paredes do fundo e da frente,
+   * e a partir de z = 0 nas paredes esquerda e direita.
+   */
+  offset: number;
+  width: number;
+  height: number;
+  /** Altura do peitoril (janelas); portas começam no piso. */
+  sill: number;
+}
+
+export interface RoomSettings {
+  name: string;
+  /** Medida interna no eixo X (parede do fundo), mm. */
+  width: number;
+  /** Medida interna no eixo Z (parede esquerda), mm. */
+  depth: number;
+  height: number;
+  openings: RoomOpening[];
+}
+
+/** Rotação do móvel vista de cima. 0 = costas para a parede do fundo, frente para a frente do cômodo. */
+export type Rotation = 0 | 90 | 180 | 270;
+
+/** Posição de uma unidade de móvel no cômodo (salva no projeto). */
+export interface FurniturePlacement {
+  itemId: string;
+  /** Qual das unidades iguais (0 .. quantidade − 1). */
+  unit: number;
+  /** Canto da projeção no piso (mm), já considerando a rotação. */
+  x: number;
+  z: number;
+  rotation: Rotation;
+  /** Altura da base do móvel em relação ao piso (aéreos ficam pendurados). */
+  elevation: number;
+}
+
+/** Posição resolvida (com medidas do móvel), usada pelas vistas do ambiente. */
+export interface ResolvedPlacement extends FurniturePlacement {
+  key: string;
+  name: string;
+  templateId: TemplateId;
+  /** Medidas do móvel sem rotação (largura X, altura Y, profundidade Z incluindo frentes). */
+  size: { w: number; h: number; d: number };
+  /** Canto mínimo do conjunto de peças no sistema do móvel (para alinhar as peças ao posicionar). */
+  origin: { x: number; y: number; z: number };
+  /** Projeção no piso já rotacionada. */
+  footprint: { w: number; d: number };
+  /** Parede em que as costas do móvel estão encostadas, se houver. */
+  wall: WallSide | null;
+  /** Posição definida automaticamente (ainda não arrastada). */
+  auto: boolean;
+}

@@ -7,6 +7,7 @@ import { TEMPLATES } from '@/engine/templates';
 import { describeParams } from '@/lib/specs';
 import { buildPdfReport, pdfText } from './pdfReport';
 import { createPanel } from '@/engine/customEngine';
+import { DEFAULT_ROOM, resolvePlacements } from '@/engine/roomEngine';
 import type { ProjectItem } from '@/types/woodcraft';
 
 function sampleReport(itemCount: number, extra: ProjectItem[] = []) {
@@ -32,6 +33,8 @@ function sampleReport(itemCount: number, extra: ProjectItem[] = []) {
     budget: computeBudget(nesting, hardware, DEFAULT_SERVICES, DEFAULT_PRICES),
     materials: DEFAULT_MATERIALS,
     sheet: DEFAULT_SHEET,
+    room: DEFAULT_ROOM,
+    placements: resolvePlacements(results, DEFAULT_ROOM, []),
   });
 }
 
@@ -41,7 +44,7 @@ describe('buildPdfReport', () => {
     expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(6);
     const content = doc.output();
     expect(content.startsWith('%PDF-')).toBe(true);
-    for (const text of ['Resumo do projeto', 'Lista de corte', 'Plano de corte', 'Lista de compras', 'Orçamento', 'Checklist de ferramentas', 'Lateral', 'Corredi']) {
+    for (const text of ['Ambiente: Cozinha', 'Parede', 'Resumo do projeto', 'Lista de corte', 'Plano de corte', 'Lista de compras', 'Orçamento', 'Checklist de ferramentas', 'Lateral', 'Corredi']) {
       expect(content).toContain(text);
     }
   });

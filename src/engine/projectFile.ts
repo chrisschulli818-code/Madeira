@@ -6,6 +6,9 @@
  * arquivos antigos ou editados à mão não quebrem o app.
  */
 import type {
+  FurniturePlacement,
+  RoomSettings,
+  Rotation,
   CabinetParams,
   CustomPanel,
   ColumnConfig,
@@ -21,6 +24,7 @@ import type {
 import { DEFAULT_PRICES } from './budgetEngine';
 import { defaultParamsFor, makeColumn, TEMPLATES } from './templates';
 import { newPanelId } from './customEngine';
+import { DEFAULT_ROOM, newOpeningId } from './roomEngine';
 
 export const PROJECT_FILE_APP = 'woodcraft-planner';
 export const PROJECT_FILE_VERSION = 2;
@@ -33,6 +37,10 @@ export interface ProjectData {
   materials: Record<MaterialRole, MaterialSpec>;
   services: ServiceSettings;
   prices: PriceSettings;
+  /** Cômodo onde os móveis são posicionados. */
+  room: RoomSettings;
+  /** Posições dos móveis no cômodo (só as que o usuário ajustou; o resto é automático). */
+  placements: FurniturePlacement[];
 }
 
 export interface ProjectFile extends ProjectData {
@@ -197,6 +205,44 @@ function parsePriceMap(raw: unknown): Record<string, number> {
   return Object.fromEntries(Object.entries(raw).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1]) && e[1] >= 0));
 }
 
+const WALLS = ['fundo', 'frente', 'esquerda', 'direita'] as const;
+
+function parseRoom(raw: unknown): RoomSettings {
+  const base = mergeKnown({ name: DEFAULT_ROOM.name, width: DEFAULT_ROOM.width, depth: DEFAULT_ROOM.depth, height: DEFAULT_ROOM.height }, raw);
+  const room: RoomSettings = {
+    ...base,
+    width: Math.max(500, base.width),
+    depth: Math.max(500, base.depth),
+    height: Math.max(1000, base.height),
+    openings: structuredClone(DEFAULT_ROOM.openings),
+  };
+  if (isObj(raw) && Array.isArray(raw.openings)) {
+    room.openings = raw.openings.filter(isObj).map((o) => ({
+      id: strOr(o.id, newOpeningId()),
+      kind: o.kind === 'janela' ? 'janela' : 'porta',
+      wall: WALLS.find((w) => w === o.wall) ?? 'fundo',
+      offset: Math.max(0, numOr(o.offset, 0)),
+      width: Math.max(100, numOr(o.width, 800)),
+      height: Math.max(100, numOr(o.height, 2100)),
+      sill: Math.max(0, numOr(o.sill, 0)),
+    }));
+  }
+  return room;
+}
+
+function parsePlacement(raw: unknown): FurniturePlacement | null {
+  if (!isObj(raw) || typeof raw.itemId !== 'string') return null;
+  const rotation = [0, 90, 180, 270].includes(raw.rotation as number) ? (raw.rotation as Rotation) : 0;
+  return {
+    itemId: raw.itemId,
+    unit: Math.max(0, Math.floor(numOr(raw.unit, 0))),
+    x: numOr(raw.x, 0),
+    z: numOr(raw.z, 0),
+    rotation,
+    elevation: numOr(raw.elevation, 0),
+  };
+}
+
 export type ParseResult = { ok: true; data: ProjectData } | { ok: false; error: string };
 
 /** Lê o conteúdo de um arquivo de projeto. */
@@ -221,6 +267,11 @@ export function parseProjectFile(text: string): ParseResult {
   prices.sheetPrices = parsePriceMap(rawPrices.sheetPrices);
   prices.itemPrices = parsePriceMap(rawPrices.itemPrices);
 
+  const itemIds = new Set(items.map((i) => i.id));
+  const placements = (Array.isArray(raw.placements) ? raw.placements : [])
+    .map(parsePlacement)
+    .filter((p): p is FurniturePlacement => p !== null && itemIds.has(p.itemId));
+
   const sheet = mergeKnown(DEFAULT_SHEET, raw.sheet);
   if (sheet.length < 300 || sheet.width < 300) Object.assign(sheet, DEFAULT_SHEET);
 
@@ -233,6 +284,8 @@ export function parseProjectFile(text: string): ParseResult {
       materials: parseMaterials(raw.materials),
       services: mergeKnown(DEFAULT_SERVICES, raw.services),
       prices,
+      room: parseRoom(raw.room),
+      placements,
     },
   };
 }

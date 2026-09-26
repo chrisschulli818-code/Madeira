@@ -5,6 +5,7 @@ import { computeBudget, DEFAULT_PRICES } from '../budgetEngine';
 import { defaultItemPrice, defaultSheetPrice } from '../pricing';
 import { createItem, DEFAULT_MATERIALS, DEFAULT_SERVICES, DEFAULT_SHEET, parseProjectFile, serializeProject } from '../projectFile';
 import { migrateState } from '@/store/projectStore';
+import { DEFAULT_ROOM } from '../roomEngine';
 import type { ProjectItem } from '@/types/woodcraft';
 
 const twoItems = (): ProjectItem[] => [
@@ -105,6 +106,8 @@ describe('arquivo de projeto', () => {
       materials: DEFAULT_MATERIALS,
       services: DEFAULT_SERVICES,
       prices: { ...DEFAULT_PRICES, labor: 300, itemPrices: { abc: 2.5 } },
+      room: { ...DEFAULT_ROOM, name: 'Cozinha da casa', width: 3200 },
+      placements: [{ itemId: items[0]!.id, unit: 1, x: 1200, z: 0, rotation: 0 as const, elevation: 0 }],
     };
     const parsed = parseProjectFile(serializeProject(data));
     expect(parsed.ok).toBe(true);
