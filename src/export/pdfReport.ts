@@ -2,13 +2,15 @@
  * Gera o relatório completo do projeto em PDF (arquivo baixado, sem depender da impressão do navegador).
  *
  * Conteúdo:
- *  1. Especificações gerais + avisos
- *  2. Desenhos cotados (frontal, frontal interna sem frentes, lateral) e medidas internas
- *  3. Lista de corte completa (numerada), portas/frentes e gavetas
+ *  1. Resumo do projeto (móveis, totais e orçamento)
+ *  2. Cada móvel: especificações, desenhos cotados (frontal, interna, lateral), medidas
+ *     internas, portas, gavetas e cabideiros
+ *  3. Lista de corte do projeto (numerada)
  *  4. Materiais: chapas, área, aproveitamento e fita de borda por material
  *  5. Plano de corte (desenho de cada chapa, peças numeradas conforme a lista de corte)
  *  6. Lista de compras (chapas, ferragens, fixação, acabamento, insumos)
- *  7. Checklist de ferramentas
+ *  7. Orçamento
+ *  8. Checklist de ferramentas
  *
  * Módulo sem React: recebe os resultados já calculados e devolve um documento jsPDF.
  * É carregado sob demanda pela interface (import dinâmico) para não pesar no bundle inicial.
@@ -17,6 +19,9 @@ import { jsPDF } from 'jspdf';
 import { autoTable, type UserOptions } from 'jspdf-autotable';
 import type {
   AssembledModel,
+  Budget,
+  BudgetCategory,
+  ProjectPiece,
   Box3D,
   HardwareCategory,
   HardwareItem,
@@ -31,13 +36,23 @@ import { edgeBandingLabel, edgeBandingMeters, pieceArea } from '@/engine/cabinet
 import { edgeBandWidthFor, hingesForDoorHeight } from '@/engine/hardwareEngine';
 import { MATERIAL_COLORS } from '@/lib/pieceColors';
 
-export interface PdfReportData {
-  projectName: string;
+/** Um móvel do projeto, com suas especificações e o modelo calculado. */
+export interface PdfItem {
+  name: string;
   templateName: string;
-  date: Date;
+  quantity: number;
   specs: Array<[string, string]>;
   model: AssembledModel;
+}
+
+export interface PdfReportData {
+  projectName: string;
+  date: Date;
+  items: PdfItem[];
+  /** Lista de corte do projeto (todas as peças, quantidades × móveis iguais). */
+  pieces: ProjectPiece[];
   nesting: NestingResult[];
+  budget: Budget;
   hardware: HardwareItem[];
   tools: ToolRequirement[];
   materials: Record<MaterialRole, MaterialSpec>;
@@ -315,76 +330,44 @@ function drawSheet(
 // Relatório
 // ---------------------------------------------------------------------------
 
-export function buildPdfReport(data: PdfReportData): jsPDF {
-  const { model, nesting, hardware, tools, materials, sheet } = data;
-  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-  doc.setProperties({ title: pdfText(`${data.projectName} — WoodCraft Planner`), creator: 'WoodCraft Planner' });
-  const w = new Writer(doc);
+const money = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-  const numberById = new Map(model.pieces.map((p, i) => [p.id, i + 1]));
-  const numberOf = (id: string) => numberById.get(id) ?? 0;
-  const matLabel = (role: MaterialRole) => materials[role].label;
+const BUDGET_LABELS: Record<BudgetCategory, string> = {
+  chapas: 'Chapas',
+  insumos: 'Ferragens e insumos',
+  servicos: 'Serviços da madeireira',
+  'mao-de-obra': 'Mão de obra',
+};
 
-  // --- Cabeçalho ------------------------------------------------------------------
-  doc.setFillColor(...PRIMARY);
-  doc.rect(0, 0, PAGE_W, 4, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(...PRIMARY);
-  doc.text('WOODCRAFT PLANNER', M, 13);
-  doc.setFontSize(20);
-  doc.setTextColor(...INK);
-  doc.text(pdfText(data.projectName), M, 22);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(...SUBTLE);
-  doc.text(pdfText(data.templateName), M, 28);
-  doc.text(data.date.toLocaleDateString('pt-BR'), PAGE_W - M, 28, { align: 'right' });
-  w.y = 36;
-
-  // --- 1. Especificações -------------------------------------------------------------
-  const units = model.pieces.reduce((n, p) => n + p.quantity, 0);
-  const area = model.pieces.reduce((n, p) => n + pieceArea(p), 0);
-  const band = model.pieces.reduce((n, p) => n + edgeBandingMeters(p), 0);
-  const totalSheets = nesting.reduce((n, g) => n + g.sheets.length, 0);
-
-  w.section(1, 'Especificações gerais');
+/** Página de um móvel: especificações, desenhos cotados e tabelas de frentes. */
+function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: number) {
+  const { doc } = w;
+  const { model } = item;
+  const title = total > 1 ? `Móvel ${index + 1}: ${item.name}` : item.name;
+  w.section(n, title, { newPage: true });
+  w.paragraph(`${item.templateName}${item.quantity > 1 ? ` — ${item.quantity} unidades iguais` : ''}`, 9);
   w.table({
-    body: [
-      ...data.specs,
-      ['Peças', `${model.pieces.length} tipos, ${units} peças`],
-      ['Área total de chapa', `${num(area, 2)} m²`],
-      ['Fita de borda (líquida)', `${num(band)} m`],
-      ['Chapas necessárias', `${totalSheets} chapa(s) de ${sheet.length} × ${sheet.width} mm (kerf ${sheet.kerf} mm, refilo ${sheet.trim} mm)`],
-    ],
+    body: item.specs,
     columnStyles: { 0: { fontStyle: 'bold', cellWidth: 62 } },
     theme: 'plain',
-    styles: { fontSize: 9, cellPadding: 1.6 },
+    styles: { fontSize: 8.5, cellPadding: 1.1 },
     alternateRowStyles: { fillColor: MUTED },
   });
   if (model.warnings.length) {
-    w.subtitle('Avisos do projeto');
-    for (const warning of model.warnings) w.paragraph(`• ${warning}`, 8.5, [146, 64, 14]);
+    for (const warning of model.warnings) w.paragraph(`• ${warning}`, 8, [146, 64, 14]);
   }
-  w.paragraph(
-    'Convenções: medidas em milímetros. Comprimento = sentido do veio. Fita de borda: C = lados do comprimento, L = lados da largura. ' +
-      'A profundidade informada é a da caixa, sem as frentes.',
-  );
 
-  // --- 2. Desenhos cotados ----------------------------------------------------------------
-  w.section(2, 'Desenhos cotados', { newPage: true });
+  // Desenhos: frontal + interna (ou lateral) em cima; lateral + medidas internas embaixo.
   const half = (CONTENT_W - 6) / 2;
-  drawElevation(doc, model, 'front', { x: M, y: w.y, w: half, h: 110 }, { showFronts: true, title: 'Vista frontal' });
   const hasFronts = model.pieces.some((p) => FRONT_ROLES.has(p.role));
-  drawElevation(doc, model, hasFronts ? 'front' : 'side', { x: M + half + 6, y: w.y, w: half, h: 110 }, {
+  w.ensure(95);
+  drawElevation(doc, model, 'front', { x: M, y: w.y, w: half, h: 92 }, { showFronts: true, title: 'Vista frontal' });
+  drawElevation(doc, model, hasFronts ? 'front' : 'side', { x: M + half + 6, y: w.y, w: half, h: 92 }, {
     showFronts: false,
     title: hasFronts ? 'Vista frontal interna (sem frentes)' : 'Vista lateral',
   });
-  w.y += 116;
-  if (hasFronts) {
-    drawElevation(doc, model, 'side', { x: M, y: w.y, w: half, h: 105 }, { showFronts: true, title: 'Vista lateral' });
-  }
-  // Medidas internas ao lado da vista lateral
+  w.y += 96;
+
   const internals: Array<[string, string]> = [
     ['Largura externa', `${model.overall.width} mm`],
     ['Altura externa', `${model.overall.height} mm`],
@@ -396,47 +379,21 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
       `${Math.round(b - a)} mm`,
     ]),
   ];
+  w.ensure(88);
+  const blockTop = w.y;
+  if (hasFronts) drawElevation(doc, model, 'side', { x: M, y: blockTop, w: half, h: 86 }, { showFronts: true, title: 'Vista lateral' });
   autoTable(doc, {
-    startY: w.y + 6,
+    startY: blockTop + 6,
     margin: { left: hasFronts ? M + half + 6 : M, right: M },
     theme: 'plain',
     head: [['Medida', 'Valor']],
     body: internals.map(([k, v]) => [pdfText(k), v]),
-    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 1.4, textColor: INK },
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 1.3, textColor: INK },
     headStyles: { fillColor: MUTED, textColor: SUBTLE, fontStyle: 'bold' },
     columnStyles: { 1: { halign: 'right' } },
   });
-
-  // --- 3. Lista de corte ---------------------------------------------------------------
-  w.section(3, 'Lista de corte', { newPage: true });
-  w.table({
-    head: [['#', 'Peça', 'Qtd', 'Compr.', 'Larg.', 'Esp.', 'Material', 'Fita', 'Veio', 'm²']],
-    body: model.pieces.map((p, i) => [
-      String(i + 1),
-      p.notes ? `${p.name}\n${p.notes}` : p.name,
-      String(p.quantity),
-      String(p.length),
-      String(p.width),
-      String(p.thickness),
-      matLabel(p.material),
-      edgeBandingLabel(p.edgeBanding),
-      p.grain === 'length' && materials[p.material].hasGrain ? 'Travado' : 'Livre',
-      num(pieceArea(p), 2),
-    ]),
-    foot: [['', 'Total', String(units), '', '', '', '', `${num(band)} m`, '', num(area, 2)]],
-    footStyles: { fillColor: MUTED, textColor: INK, fontStyle: 'bold' },
-    columnStyles: {
-      0: { cellWidth: 7, halign: 'right', textColor: SUBTLE },
-      1: { cellWidth: 52 },
-      2: { halign: 'right', fontStyle: 'bold', cellWidth: 10 },
-      3: { halign: 'right', cellWidth: 15 },
-      4: { halign: 'right', cellWidth: 14 },
-      5: { halign: 'right', cellWidth: 10 },
-      7: { cellWidth: 13 },
-      8: { cellWidth: 14 },
-      9: { halign: 'right', cellWidth: 12 },
-    },
-  });
+  const tableEnd = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? blockTop;
+  w.y = Math.max(tableEnd, hasFronts ? blockTop + 88 : tableEnd) + 4;
 
   if (model.doors.length) {
     w.subtitle('Portas');
@@ -475,6 +432,112 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
       columnStyles: { 0: { cellWidth: 8, halign: 'right' } },
     });
   }
+}
+
+export function buildPdfReport(data: PdfReportData): jsPDF {
+  const { items, pieces, nesting, hardware, tools, budget, materials, sheet } = data;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  doc.setProperties({ title: pdfText(`${data.projectName} — WoodCraft Planner`), creator: 'WoodCraft Planner' });
+  const w = new Writer(doc);
+
+  const numberById = new Map(pieces.map((p, i) => [p.id, i + 1]));
+  const numberOf = (id: string) => numberById.get(id) ?? 0;
+  const matLabel = (role: MaterialRole) => materials[role].label;
+  const multi = items.length > 1;
+  const subtitle = multi ? `${items.length} móveis` : (items[0]?.templateName ?? '');
+
+  // --- Cabeçalho ------------------------------------------------------------------
+  doc.setFillColor(...PRIMARY);
+  doc.rect(0, 0, PAGE_W, 4, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...PRIMARY);
+  doc.text('WOODCRAFT PLANNER', M, 13);
+  doc.setFontSize(20);
+  doc.setTextColor(...INK);
+  doc.text(pdfText(data.projectName), M, 22);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(...SUBTLE);
+  doc.text(pdfText(subtitle), M, 28);
+  doc.text(data.date.toLocaleDateString('pt-BR'), PAGE_W - M, 28, { align: 'right' });
+  w.y = 36;
+
+  // --- 1. Resumo ---------------------------------------------------------------------
+  const units = pieces.reduce((n, p) => n + p.quantity, 0);
+  const area = pieces.reduce((n, p) => n + pieceArea(p), 0);
+  const band = pieces.reduce((n, p) => n + edgeBandingMeters(p), 0);
+  const totalSheets = nesting.reduce((n, g) => n + g.sheets.length, 0);
+
+  w.section(1, 'Resumo do projeto');
+  w.table({
+    head: [['#', 'Móvel', 'Tipo', 'L × A × P (mm)', 'Qtd']],
+    body: items.map((it, i) => [
+      String(i + 1),
+      it.name,
+      it.templateName,
+      `${it.model.overall.width} × ${it.model.overall.height} × ${it.model.overall.depth}`,
+      String(it.quantity),
+    ]),
+    columnStyles: { 0: { cellWidth: 8, halign: 'right' }, 4: { halign: 'right', fontStyle: 'bold', cellWidth: 12 } },
+  });
+  w.table({
+    body: [
+      ['Peças', `${pieces.length} tipos, ${units} peças`],
+      ['Área total de chapa', `${num(area, 2)} m²`],
+      ['Fita de borda (líquida)', `${num(band)} m`],
+      ['Chapas necessárias', `${totalSheets} chapa(s) de ${sheet.length} × ${sheet.width} mm (kerf ${sheet.kerf} mm, refilo ${sheet.trim} mm)`],
+      ['Custo estimado', money(budget.cost)],
+      ...(budget.margin > 0 ? [['Preço sugerido (com margem)', money(budget.price)]] : []),
+    ],
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 62 } },
+    theme: 'plain',
+    styles: { fontSize: 9, cellPadding: 1.6 },
+    alternateRowStyles: { fillColor: MUTED },
+  });
+  w.paragraph(
+    'Convenções: medidas em milímetros. Comprimento = sentido do veio. Fita de borda: C = lados do comprimento, L = lados da largura. ' +
+      'A profundidade informada é a da caixa, sem as frentes. Quantidades da lista de corte e das compras já consideram todos os móveis iguais.',
+  );
+
+  // --- 2. Móveis ----------------------------------------------------------------------
+  items.forEach((it, i) => writeItem(w, 2, it, i, items.length));
+
+  // --- 3. Lista de corte ---------------------------------------------------------------
+  w.section(3, 'Lista de corte', { newPage: true });
+  const head = ['#', 'Peça', ...(multi ? ['Móvel'] : []), 'Qtd', 'Compr.', 'Larg.', 'Esp.', 'Material', 'Fita', 'Veio', 'm²'];
+  const off = multi ? 1 : 0;
+  w.table({
+    head: [head],
+    body: pieces.map((p, i) => [
+      String(i + 1),
+      p.notes ? `${p.name}\n${p.notes}` : p.name,
+      ...(multi ? [p.itemName] : []),
+      String(p.quantity),
+      String(p.length),
+      String(p.width),
+      String(p.thickness),
+      matLabel(p.material),
+      edgeBandingLabel(p.edgeBanding),
+      p.grain === 'length' && materials[p.material].hasGrain ? 'Travado' : 'Livre',
+      num(pieceArea(p), 2),
+    ]),
+    foot: [['', 'Total', ...(multi ? [''] : []), String(units), '', '', '', '', `${num(band)} m`, '', num(area, 2)]],
+    footStyles: { fillColor: MUTED, textColor: INK, fontStyle: 'bold' },
+    styles: { fontSize: multi ? 7.5 : 8 },
+    columnStyles: {
+      0: { cellWidth: 7, halign: 'right', textColor: SUBTLE },
+      1: { cellWidth: multi ? 40 : 52 },
+      ...(multi ? { 2: { cellWidth: 24 } } : {}),
+      [2 + off]: { halign: 'right', fontStyle: 'bold', cellWidth: 9 },
+      [3 + off]: { halign: 'right', cellWidth: 13 },
+      [4 + off]: { halign: 'right', cellWidth: 12 },
+      [5 + off]: { halign: 'right', cellWidth: 9 },
+      [7 + off]: { cellWidth: 12 },
+      [8 + off]: { cellWidth: 13 },
+      [9 + off]: { halign: 'right', cellWidth: 11 },
+    },
+  });
 
   // --- 4. Materiais ---------------------------------------------------------------------
   w.section(4, 'Materiais');
@@ -496,7 +559,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right', fontStyle: 'bold' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
   });
   const bands = new Map<string, { label: string; width: number; meters: number }>();
-  for (const p of model.pieces) {
+  for (const p of pieces) {
     const meters = edgeBandingMeters(p);
     if (!meters) continue;
     const width = edgeBandWidthFor(p.thickness);
@@ -518,9 +581,11 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
   w.section(5, 'Plano de corte', { newPage: true });
   w.paragraph(
     `Chapa ${sheet.length} × ${sheet.width} mm, kerf ${sheet.kerf} mm, refilo ${sheet.trim} mm. Cortes em guilhotina (de ponta a ponta). ` +
-      'Os números (#) correspondem à lista de corte; a área hachurada é sobra/retalho.',
+      'Os números (#) correspondem à lista de corte; a área hachurada é sobra/retalho.' +
+      (multi ? ' As peças de todos os móveis dividem as mesmas chapas.' : ''),
   );
   const sheetH = sheet.width * (CONTENT_W / sheet.length);
+  const pieceById = new Map(pieces.map((p) => [p.id, p]));
   for (const g of nesting) {
     w.ensure(14 + sheetH);
     w.subtitle(`${g.materialLabel} · ${g.thickness} mm — ${g.sheets.length} chapa(s), aproveitamento ${pct(g.utilization)}`);
@@ -535,7 +600,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
       doc.text(`Chapa ${layout.index + 1}`, M, w.y + 3);
       doc.text(`${layout.placements.length} peças · ${pct(layout.utilization)}`, PAGE_W - M, w.y + 3, { align: 'right' });
       w.y += 5;
-      const color = MATERIAL_COLORS[model.pieces.find((p) => p.id === layout.placements[0]?.pieceId)?.material ?? 'carcass'];
+      const color = MATERIAL_COLORS[pieceById.get(layout.placements[0]?.pieceId ?? '')?.material ?? 'carcass'];
       w.y += drawSheet(doc, layout, sheet, { x: M, y: w.y, w: CONTENT_W }, color, numberOf) + 2;
       const counts = new Map<string, { label: string; qty: number }>();
       for (const pl of layout.placements) {
@@ -545,7 +610,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
       }
       const legend = [...counts.entries()]
         .sort(([a], [b]) => numberOf(a) - numberOf(b))
-        .map(([id, c]) => `#${numberOf(id)} ${c.label} ×${c.qty}`)
+        .map(([id, c]) => `#${numberOf(id)} ${c.label}${multi ? ` (${pieceById.get(id)?.itemName ?? ''})` : ''} ×${c.qty}`)
         .join('   ·   ');
       w.paragraph(legend, 7.5);
       w.y += 3;
@@ -557,7 +622,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
   w.table({
     head: [['Qtd', 'Un', 'Item', 'Especificação', 'Aplicação']],
     body: [
-      ...nesting.map((g) => [String(g.sheets.length), 'un', `Chapa ${g.materialLabel}`, `${g.thickness} mm — ${sheet.length} × ${sheet.width} mm`, 'Corte das peças']),
+      ...nesting.map((g) => [String(g.sheets.length), 'un', `Chapa ${g.materialLabel}`, `${g.thickness} mm - ${sheet.length} × ${sheet.width} mm`, 'Corte das peças']),
       ...hardware.map((i) => [num(i.quantity), i.unit, `${i.name}\n(${HARDWARE_LABELS[i.category]})`, i.specification, i.application]),
     ],
     columnStyles: {
@@ -568,8 +633,48 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
     },
   });
 
-  // --- 7. Ferramentas ------------------------------------------------------------------------
-  w.section(7, 'Checklist de ferramentas');
+  // --- 7. Orçamento ------------------------------------------------------------------------
+  w.section(7, 'Orçamento', { newPage: true });
+  w.paragraph('Preços de referência ou informados no app. Confirme os valores com os seus fornecedores.');
+  w.table({
+    head: [['Item', 'Qtd', 'Un', 'Preço unit.', 'Total']],
+    body: budget.lines.map((l) => [
+      l.detail ? `${l.description}\n${l.detail}` : l.description,
+      num(l.quantity),
+      l.unit,
+      money(l.unitPrice),
+      money(l.total),
+    ]),
+    columnStyles: {
+      1: { halign: 'right', cellWidth: 14 },
+      2: { cellWidth: 12, textColor: SUBTLE },
+      3: { halign: 'right', cellWidth: 26 },
+      4: { halign: 'right', cellWidth: 28, fontStyle: 'bold' },
+    },
+  });
+  w.table({
+    body: [
+      ...(Object.keys(BUDGET_LABELS) as BudgetCategory[])
+        .filter((c) => budget.subtotals[c] > 0)
+        .map((c) => [BUDGET_LABELS[c], money(budget.subtotals[c])]),
+      ['Custo total', money(budget.cost)],
+      ...(budget.margin > 0 ? [['Margem', money(budget.margin)], ['Preço final sugerido', money(budget.price)]] : []),
+    ],
+    theme: 'plain',
+    margin: { left: PAGE_W - M - 100, right: M },
+    styles: { fontSize: 9.5, cellPadding: 1.6 },
+    columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
+    didParseCell: (hook) => {
+      const label = hook.row.raw instanceof Array ? String(hook.row.raw[0]) : '';
+      if (label === 'Custo total' || label === 'Preço final sugerido') {
+        hook.cell.styles.fillColor = MUTED;
+        hook.cell.styles.fontStyle = 'bold';
+      }
+    },
+  });
+
+  // --- 8. Ferramentas ------------------------------------------------------------------------
+  w.section(8, 'Checklist de ferramentas');
   for (const [category, title] of [
     ['obrigatoria', 'Essenciais'],
     ['recomendada', 'Opcionais / avançadas'],
@@ -601,7 +706,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(...SUBTLE);
-    doc.text(pdfText(`WoodCraft Planner · ${data.projectName} · ${data.templateName}`), M, PAGE_H - 7);
+    doc.text(pdfText(`WoodCraft Planner · ${data.projectName} · ${subtitle}`), M, PAGE_H - 7);
     doc.text(`Página ${i} de ${pages}`, PAGE_W - M, PAGE_H - 7, { align: 'right' });
   }
 

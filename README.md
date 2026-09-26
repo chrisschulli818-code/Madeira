@@ -10,7 +10,13 @@ A partir das medidas externas e das opções de construção, gera automaticamen
 - **Visualização 3D** (Three.js) e **vistas 2D cotadas** (SVG), com destaque sincronizado entre tabela, 3D e plano de corte;
 - **Exportação em PDF** (arquivo A4 com especificações, desenhos cotados, lista de corte numerada, portas/gavetas, materiais, plano de corte com legenda, lista de compras e checklist de ferramentas) e **CSV** para a madeireira.
 
-Templates: balcão inferior (gavetas + porta), armário aéreo, guarda-roupa modular e mesa de trabalho.
+- **Projetos com vários móveis** (ex.: balcão + aéreo + armário), cada um com nome e quantidade de unidades iguais —
+  as peças de todos dividem as mesmas chapas no plano de corte;
+- **Orçamento** com preços de referência editáveis (chapas, ferragens, serviços da madeireira), mão de obra e margem;
+- **Salvar/abrir projetos** em arquivo `.woodcraft.json` para levar a outro computador ou compartilhar.
+
+Templates: balcão inferior, armário aéreo, guarda-roupa modular e mesa de trabalho. Em cada vão é possível
+combinar gavetas e porta, com o gaveteiro em cima ou embaixo.
 
 ## Como rodar
 
@@ -54,6 +60,10 @@ src/
 │   ├── nestingEngine.ts        # Otimizador de chapas: guilhotina 2D multi-heurística
 │   ├── hardwareEngine.ts       # Quantitativo de ferragens, fixadores e fita de borda
 │   ├── toolsEngine.ts          # Ferramentas essenciais/opcionais conforme o projeto
+│   ├── projectEngine.ts        # Soma vários móveis: peças, plano de corte, ferragens, ferramentas
+│   ├── budgetEngine.ts         # Orçamento (chapas, insumos, serviços, mão de obra, margem)
+│   ├── pricing.ts              # Preços de referência (R$)
+│   ├── projectFile.ts          # Salvar/abrir .woodcraft.json (com validação)
 │   ├── exporters.ts            # CSV da lista de corte
 │   └── __tests__/              # Testes unitários dos motores
 ├── export/pdfReport.ts         # Gerador do PDF (jsPDF + autotable, carregado sob demanda)
@@ -72,8 +82,8 @@ src/
     └── report/PrintReport.tsx  # Relatório A4 (visível apenas na impressão)
 ```
 
-**Fluxo de dados:** `store (entradas)` → `buildModel()` → `AssembledModel { pieces, doors, drawers, joints }` →
-`planCutting()` / `computeHardware()` / `computeTools()` → componentes. Nada derivado é guardado no store,
+**Fluxo de dados:** `store (móveis + configurações)` → `buildModel()` por móvel → `AssembledModel { pieces, doors, drawers, joints }` →
+`projectPieces()` → `planCutting()` / `projectHardware()` / `projectTools()` → `computeBudget()` → componentes. Nada derivado é guardado no store,
 então não existe estado inconsistente.
 
 ## Regras de cálculo (resumo)

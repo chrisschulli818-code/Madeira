@@ -39,14 +39,20 @@ export type TopType = 'full' | 'rails';
 
 /**
  * Configuração de um vão (coluna) da caixa. As colunas são separadas por divisórias verticais.
- * Uma coluna pode ter gavetas (em cima), portas (embaixo) e prateleiras móveis atrás das portas.
+ * Uma coluna pode ter gavetas (em cima ou embaixo), portas e prateleiras móveis na região das portas.
  */
 export interface ColumnConfig {
   id: string;
   /** Peso relativo da largura do vão (1 = igual aos demais). */
   widthRatio: number;
-  /** Quantidade de gavetas empilhadas (ficam no topo do vão). */
+  /** Quantidade de gavetas empilhadas. */
   drawers: number;
+  /**
+   * Posição do gaveteiro quando o vão também tem porta: no topo (padrão de cozinha)
+   * ou embaixo (gaveteiro interno de guarda-roupa, balcão com porta em cima).
+   * Opcional para compatibilidade com projetos salvos antes deste campo (= 'top').
+   */
+  drawerPosition?: 'top' | 'bottom';
   /** Folhas de porta: 0 (vão aberto/sem porta), 1 ou 2. */
   doors: 0 | 1 | 2;
   /** Prateleiras móveis na região das portas (ou do vão aberto). */
@@ -337,4 +343,79 @@ export interface ToolRequirement {
   name: string;
   category: ToolCategory;
   usage: string;
+}
+
+// ---------------------------------------------------------------------------
+// Projeto com vários móveis
+// ---------------------------------------------------------------------------
+
+interface ProjectItemBase {
+  id: string;
+  /** Nome dado pelo usuário (ex.: "Balcão da pia"). */
+  name: string;
+  /** Quantos móveis iguais serão feitos. */
+  quantity: number;
+}
+
+/** Um móvel do projeto: template + parâmetros próprios. */
+export type ProjectItem =
+  | (ProjectItemBase & { templateId: 'workbench'; params: WorkbenchParams })
+  | (ProjectItemBase & { templateId: Exclude<TemplateId, 'workbench'>; params: CabinetParams });
+
+/** Linha da lista de corte do projeto (peça de um móvel, já multiplicada pela quantidade de móveis). */
+export interface ProjectPiece extends CutPiece {
+  itemId: string;
+  itemName: string;
+}
+
+export interface ServiceSettings {
+  /** Corte das chapas feito pela madeireira (seccionadora). */
+  outsourcedCutting: boolean;
+  /** Fita de borda aplicada pela madeireira (coladeira industrial). */
+  outsourcedEdgeBanding: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Orçamento
+// ---------------------------------------------------------------------------
+
+export interface PriceSettings {
+  /** Preço por chapa, por chave de material (ver `materialKey`). Ausente = preço de referência. */
+  sheetPrices: Record<string, number>;
+  /** Preço unitário por id de insumo. Ausente = preço de referência. */
+  itemPrices: Record<string, number>;
+  /** Serviço de corte na madeireira, por chapa. */
+  cuttingPerSheet: number;
+  /** Serviço de fitagem na madeireira, por metro. */
+  edgeBandingPerMeter: number;
+  /** Mão de obra (valor fechado). */
+  labor: number;
+  /** Margem/lucro sobre o custo (%). */
+  marginPercent: number;
+}
+
+export type BudgetCategory = 'chapas' | 'insumos' | 'servicos' | 'mao-de-obra';
+
+export interface BudgetLine {
+  /** Chave usada para editar o preço (sheet:<materialKey>, item:<id>, ou serviço). */
+  key: string;
+  category: BudgetCategory;
+  description: string;
+  detail?: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  total: number;
+  /** true quando o preço foi editado pelo usuário. */
+  custom: boolean;
+}
+
+export interface Budget {
+  lines: BudgetLine[];
+  subtotals: Record<BudgetCategory, number>;
+  /** Custo total (materiais + serviços + mão de obra). */
+  cost: number;
+  margin: number;
+  /** Preço final sugerido (custo + margem). */
+  price: number;
 }

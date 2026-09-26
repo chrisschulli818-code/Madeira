@@ -367,23 +367,57 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
     const nDrawers = Math.max(0, Math.floor(col.drawers));
     const nDoors = col.doors;
 
-    // Região livre (interna) para portas/prateleiras abaixo das gavetas.
+    // Região interna livre para portas/prateleiras e faixa das frentes da porta.
     let regionTop = topUnder;
+    let regionBottom = bottomTop;
     let doorTop = frontTop;
+    let doorBottom = frontBottom;
 
     // --- Gavetas --------------------------------------------------------------------
     if (nDrawers > 0) {
       const mixed = nDoors > 0;
+      const atBottom = mixed && col.drawerPosition === 'bottom';
       const fh = mixed ? p.drawerFrontHeight : (frontTop - frontBottom - (nDrawers - 1) * g) / nDrawers;
       const boxW = colW - 2 * SLIDE_CLEARANCE_PER_SIDE;
-      const boxH = Math.max(DRAWER_MIN_BOX_HEIGHT, fh - DRAWER_HEIGHT_CLEARANCE);
       const slide = slideLength ?? Math.max(MIN_PIECE_SIZE, internalDepth - SLIDE_REAR_CLEARANCE);
       if (slideLength === null) warnings.push('Profundidade interna insuficiente para corrediça comercial (mín. 250 mm).');
       if (fh < 100) warnings.push(`Frente de gaveta com ${Math.round(fh)} mm é baixa demais para uma caixa útil.`);
 
+      // Limites internos do gaveteiro (entre base/tampo e a prateleira fixa).
+      let drawerFloor = bottomTop;
+      let drawerCeiling = topUnder;
+
+      if (mixed) {
+        // Prateleira fixa separando gaveteiro e porta, centrada na folga entre as frentes.
+        const boundary = atBottom ? frontBottom + nDrawers * (fh + g) - g / 2 : frontTop - nDrawers * (fh + g) + g / 2;
+        const shelfY = boundary - T / 2;
+        if (atBottom) {
+          doorBottom = boundary + g / 2;
+          regionBottom = shelfY + T;
+          drawerCeiling = shelfY;
+        } else {
+          doorTop = boundary - g / 2;
+          regionTop = shelfY;
+          drawerFloor = shelfY + T;
+        }
+        out.add({
+          name: 'Prateleira fixa',
+          role: 'fixed-shelf',
+          material: 'carcass',
+          length: colW,
+          width: internalDepth,
+          thickness: T,
+          edgeBanding: EDGE.oneLong,
+          instances: [{ x: x0, y: shelfY, z: internalZ0, w: colW, h: T, d: internalDepth }],
+          notes: 'Separa gavetas e porta',
+        });
+        joints.push({ label: 'Prateleira fixa × laterais', length: internalDepth }, { label: 'Prateleira fixa × laterais', length: internalDepth });
+      } else {
+        regionTop = bottomTop; // vão só de gavetas: não sobra região para prateleiras
+      }
+
       for (let k = 0; k < nDrawers; k++) {
-        const top = frontTop - k * (fh + g);
-        const bottom = top - fh;
+        const bottom = atBottom ? frontBottom + k * (fh + g) : frontTop - k * (fh + g) - fh;
         const frontW = frontSpan - g;
         out.add({
           name: 'Frente de gaveta',
@@ -396,8 +430,11 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
           instances: [{ x: fx0 + g / 2, y: bottom, z: D, w: frontW, h: fh, d: Tf }],
         });
 
+        // A caixa fica 10 mm acima do piso do vão (fundo pregado por baixo) e abaixo do teto.
         const boxX = x0 + SLIDE_CLEARANCE_PER_SIDE;
-        const boxY = Math.max(bottom, bottomTop) + 10 + Tb;
+        const boxY = Math.max(bottom, drawerFloor) + 10 + Tb;
+        const slotTop = Math.min(bottom + fh, drawerCeiling);
+        const boxH = Math.max(DRAWER_MIN_BOX_HEIGHT, Math.min(fh - DRAWER_HEIGHT_CLEARANCE, slotTop - boxY - 5));
         const boxZ = D - slide;
         out.add({
           name: 'Lateral da gaveta',
@@ -441,33 +478,11 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
         // Cada caixa de gaveta tem 4 cantos parafusados.
         for (let c = 0; c < 4; c++) joints.push({ label: 'Canto de gaveta', length: boxH });
       }
-
-      if (mixed) {
-        // Prateleira fixa separando o gaveteiro da região da porta, centrada na folga entre frentes.
-        const boundary = frontTop - nDrawers * (fh + g) + g / 2;
-        doorTop = boundary - g / 2;
-        const shelfY = boundary - T / 2;
-        regionTop = shelfY;
-        out.add({
-          name: 'Prateleira fixa',
-          role: 'fixed-shelf',
-          material: 'carcass',
-          length: colW,
-          width: internalDepth,
-          thickness: T,
-          edgeBanding: EDGE.oneLong,
-          instances: [{ x: x0, y: shelfY, z: internalZ0, w: colW, h: T, d: internalDepth }],
-          notes: 'Separa gavetas e porta',
-        });
-        joints.push({ label: 'Prateleira fixa × laterais', length: internalDepth }, { label: 'Prateleira fixa × laterais', length: internalDepth });
-      } else {
-        regionTop = bottomTop; // vão só de gavetas: não sobra região para prateleiras
-      }
     }
 
     // --- Portas ---------------------------------------------------------------------
     if (nDoors > 0) {
-      const doorH = doorTop - frontBottom;
+      const doorH = doorTop - doorBottom;
       if (doorH < 150) warnings.push(`Porta do vão ${i + 1} ficou com ${Math.round(doorH)} mm de altura.`);
       const leafW = nDoors === 1 ? frontSpan - g : (frontSpan - 2 * g) / 2;
       if (leafW > MAX_DOOR_LEAF_WIDTH) {
@@ -491,14 +506,13 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
           width: leafW,
           thickness: Tf,
           edgeBanding: EDGE.all,
-          instances: [{ x: leaf.x, y: frontBottom, z: D, w: leafW, h: doorH, d: Tf }],
+          instances: [{ x: leaf.x, y: doorBottom, z: D, w: leafW, h: doorH, d: Tf }],
         });
         doors.push({ width: cutMm(leafW), height: cutMm(doorH), hingeSide: leaf.hingeSide, overlay: leaf.outer ? 'full' : 'half' });
       }
     }
 
     // --- Prateleiras móveis e cabideiro ------------------------------------------------
-    const regionBottom = bottomTop;
     const regionH = regionTop - regionBottom;
     const nShelves = nDrawers > 0 && nDoors === 0 ? 0 : Math.max(0, Math.floor(col.shelves));
     if (nDrawers > 0 && nDoors === 0 && col.shelves > 0) {

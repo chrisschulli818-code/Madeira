@@ -4,14 +4,9 @@
  * A lista é derivada do modelo: método de montagem, presença de portas/gavetas/prateleiras,
  * tipo de fundo, tipo de móvel e se o corte/fitagem será feito pela madeireira.
  */
-import type { AssembledModel, ToolCategory, ToolRequirement } from '@/types/woodcraft';
+import type { AssembledModel, ServiceSettings, ToolCategory, ToolRequirement } from '@/types/woodcraft';
 
-export interface ServiceOptions {
-  /** Corte das chapas feito pela madeireira (seccionadora). */
-  outsourcedCutting: boolean;
-  /** Fita de borda aplicada pela madeireira (coladeira industrial). */
-  outsourcedEdgeBanding: boolean;
-}
+export type ServiceOptions = ServiceSettings;
 
 export function computeTools(model: AssembledModel, services: ServiceOptions): ToolRequirement[] {
   const tools = new Map<string, ToolRequirement>();
@@ -120,6 +115,27 @@ export function computeTools(model: AssembledModel, services: ServiceOptions): T
     add('hacksaw', 'Serra de arco (metal)', 'obrigatoria', 'Cortar o tubo oblongo na medida.');
   }
 
+  return sortTools([...tools.values()]);
+}
+
+const sortTools = (tools: ToolRequirement[]) => {
   const order = { obrigatoria: 0, recomendada: 1 } as const;
-  return [...tools.values()].sort((a, b) => order[a.category] - order[b.category]);
+  return tools.sort((a, b) => order[a.category] - order[b.category]);
+};
+
+/** Une as ferramentas de vários móveis (obrigatória em algum móvel = obrigatória no projeto). */
+export function mergeTools(lists: ToolRequirement[][]): ToolRequirement[] {
+  const merged = new Map<string, ToolRequirement>();
+  for (const list of lists) {
+    for (const tool of list) {
+      const existing = merged.get(tool.id);
+      if (!existing) {
+        merged.set(tool.id, { ...tool });
+        continue;
+      }
+      if (tool.category === 'obrigatoria') existing.category = 'obrigatoria';
+      if (!existing.usage.includes(tool.usage)) existing.usage = `${existing.usage} ${tool.usage}`;
+    }
+  }
+  return sortTools([...merged.values()]);
 }

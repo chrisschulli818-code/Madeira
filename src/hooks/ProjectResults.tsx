@@ -1,30 +1,40 @@
 /**
  * Resultados derivados do projeto, calculados UMA vez e compartilhados via contexto.
  *
- * `useDeferredValue` mantém sliders fluidos: o recálculo mais pesado (nesting) acompanha
+ * Cada etapa é memoizada separadamente (modelos → peças → plano de corte → insumos → orçamento),
+ * e `useDeferredValue` mantém sliders fluidos: o recálculo mais pesado (nesting) acompanha
  * em segundo plano enquanto a lista de corte e o 3D respondem imediatamente.
  */
 import { createContext, useContext, useDeferredValue, useMemo, type ReactNode } from 'react';
 import { useProjectStore } from '@/store/projectStore';
-import { buildModel, type ModelInput } from '@/engine/cabinetEngine';
 import { planCutting } from '@/engine/nestingEngine';
-import { computeHardware } from '@/engine/hardwareEngine';
-import { computeTools } from '@/engine/toolsEngine';
+import { buildItemResults, projectHardware, projectPieces, projectTools, type ItemResult } from '@/engine/projectEngine';
+import { computeBudget } from '@/engine/budgetEngine';
 import type {
   AssembledModel,
+  Budget,
   HardwareItem,
   MaterialRole,
   MaterialSpec,
   NestingResult,
+  ProjectPiece,
   SheetSettings,
   ToolRequirement,
 } from '@/types/woodcraft';
 
 export interface ProjectResults {
+  /** Todos os móveis do projeto com seus modelos calculados. */
+  items: ItemResult[];
+  /** Móvel ativo (exibido no viewport e no painel de parâmetros). */
+  active: ItemResult;
+  /** Atalho para o modelo do móvel ativo. */
   model: AssembledModel;
+  /** Lista de corte do projeto inteiro (quantidades × móveis iguais). */
+  pieces: ProjectPiece[];
   nesting: NestingResult[];
   hardware: HardwareItem[];
   tools: ToolRequirement[];
+  budget: Budget;
   materials: Record<MaterialRole, MaterialSpec>;
   sheet: SheetSettings;
 }
@@ -32,31 +42,26 @@ export interface ProjectResults {
 const ResultsContext = createContext<ProjectResults | null>(null);
 
 export function ProjectResultsProvider({ children }: { children: ReactNode }) {
-  const templateId = useProjectStore((s) => s.templateId);
-  const cabinetParams = useProjectStore((s) => s.cabinetParams);
-  const workbenchParams = useProjectStore((s) => s.workbenchParams);
+  const itemsInput = useProjectStore((s) => s.items);
+  const activeItemId = useProjectStore((s) => s.activeItemId);
   const sheet = useDeferredValue(useProjectStore((s) => s.sheet));
   const materials = useProjectStore((s) => s.materials);
   const services = useProjectStore((s) => s.services);
+  const prices = useProjectStore((s) => s.prices);
 
-  const input: ModelInput = useMemo(
-    () =>
-      templateId === 'workbench'
-        ? { templateId, params: workbenchParams }
-        : { templateId, params: cabinetParams[templateId] },
-    [templateId, cabinetParams, workbenchParams],
-  );
+  const items = useMemo(() => buildItemResults(itemsInput), [itemsInput]);
+  const pieces = useMemo(() => projectPieces(items), [items]);
+  const deferredPieces = useDeferredValue(pieces);
+  const nesting = useMemo(() => planCutting(deferredPieces, materials, sheet), [deferredPieces, materials, sheet]);
+  const hardware = useMemo(() => projectHardware(items, pieces, materials), [items, pieces, materials]);
+  const tools = useMemo(() => projectTools(items, services), [items, services]);
+  const budget = useMemo(() => computeBudget(nesting, hardware, services, prices), [nesting, hardware, services, prices]);
 
-  const model = useMemo(() => buildModel(input), [input]);
-  const deferredModel = useDeferredValue(model);
-  const nesting = useMemo(() => planCutting(deferredModel.pieces, materials, sheet), [deferredModel, materials, sheet]);
-  const hardware = useMemo(() => computeHardware(model, materials), [model, materials]);
-  const tools = useMemo(() => computeTools(model, services), [model, services]);
+  const value = useMemo(() => {
+    const active = items.find((r) => r.item.id === activeItemId) ?? items[0]!;
+    return { items, active, model: active.model, pieces, nesting, hardware, tools, budget, materials, sheet };
+  }, [items, activeItemId, pieces, nesting, hardware, tools, budget, materials, sheet]);
 
-  const value = useMemo(
-    () => ({ model, nesting, hardware, tools, materials, sheet }),
-    [model, nesting, hardware, tools, materials, sheet],
-  );
   return <ResultsContext.Provider value={value}>{children}</ResultsContext.Provider>;
 }
 

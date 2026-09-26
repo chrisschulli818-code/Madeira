@@ -92,6 +92,40 @@ describe('buildCarcass — variações', () => {
     expect(m.warnings.length).toBeGreaterThan(0);
   });
 
+  it('gaveteiro embaixo: gaveta no piso, prateleira fixa e porta acima', () => {
+    const base = referenceParams();
+    const m = buildCarcass('base-cabinet', {
+      ...base,
+      drawerFrontHeight: 180,
+      columns: [{ id: 'c', widthRatio: 1, drawers: 1, doors: 1, shelves: 1, hangingRod: false, drawerPosition: 'bottom' }],
+    });
+    const front = byName(m, 'Frente de gaveta')!;
+    const door = byName(m, 'Porta')!;
+    const fixed = byName(m, 'Prateleira fixa')!;
+    // Frente da gaveta começa logo acima do rodapé (100 + 1,5 de folga)
+    expect(front.instances[0]!.y).toBeCloseTo(101.5);
+    // Porta ocupa o restante: 770 − 180 − 3 (folga entre frentes) − 3 (folgas externas)
+    expect(door.length).toBe(770 - 180 - 6);
+    expect(door.instances[0]!.y).toBeGreaterThan(front.instances[0]!.y + 180);
+    // Prateleira fixa fica entre a gaveta e a porta; a prateleira móvel acima dela
+    const shelf = byName(m, 'Prateleira móvel')!;
+    expect(fixed.instances[0]!.y).toBeGreaterThan(front.instances[0]!.y + 150);
+    expect(shelf.instances[0]!.y).toBeGreaterThan(fixed.instances[0]!.y);
+    // Caixa da gaveta cabe abaixo da prateleira fixa
+    const side = byName(m, 'Lateral da gaveta')!.instances[0]!;
+    expect(side.y + side.h).toBeLessThanOrEqual(fixed.instances[0]!.y);
+  });
+
+  it('gaveteiro no topo (padrão) mantém a porta embaixo', () => {
+    const m = buildCarcass('base-cabinet', {
+      ...referenceParams(),
+      columns: [{ id: 'c', widthRatio: 1, drawers: 1, doors: 1, shelves: 0, hangingRod: false }],
+    });
+    expect(byName(m, 'Porta')!.instances[0]!.y).toBeCloseTo(101.5);
+    const side = byName(m, 'Lateral da gaveta')!.instances[0]!;
+    expect(side.y).toBeGreaterThan(byName(m, 'Prateleira fixa')!.instances[0]!.y);
+  });
+
   it('cabideiro no guarda-roupa', () => {
     const m = buildCarcass('wardrobe', defaultParamsFor('wardrobe'));
     expect(m.hangingRods).toHaveLength(1);

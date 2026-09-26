@@ -224,20 +224,29 @@ export function ThicknessPicker({
   );
 }
 
-/** Seção recolhível do painel lateral. */
+/** true em telas grandes (lg, ≥ 1024 px). Avaliado uma vez, na montagem. */
+const isDesktop = () => typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(min-width: 1024px)').matches;
+
+/**
+ * Seção recolhível do painel lateral.
+ * No celular só as seções marcadas com `mobileOpen` começam abertas, para o painel não ficar enorme.
+ */
 export function Section({
   title,
   icon,
   children,
   defaultOpen = true,
+  mobileOpen = false,
 }: {
   title: string;
   icon?: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
+  mobileOpen?: boolean;
 }) {
+  const [open] = useState(() => defaultOpen && (mobileOpen || isDesktop()));
   return (
-    <details open={defaultOpen} className="group border-b border-border">
+    <details open={open} className="group border-b border-border">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold hover:bg-muted/60 [&::-webkit-details-marker]:hidden">
         <span className="text-primary [&_svg]:size-4">{icon}</span>
         <span className="flex-1">{title}</span>

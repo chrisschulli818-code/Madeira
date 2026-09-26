@@ -17,6 +17,7 @@ export function makeColumn(partial: Partial<ColumnConfig> = {}): ColumnConfig {
     doors: 1,
     shelves: 1,
     hangingRod: false,
+    drawerPosition: 'top',
     ...partial,
   };
 }
@@ -49,8 +50,8 @@ export const BASE_CABINET: CabinetTemplate<CabinetParams> = {
     depth: 560,
     topType: 'rails',
     columns: [
-      { id: 'base-c1', widthRatio: 1, drawers: 2, doors: 0, shelves: 0, hangingRod: false },
-      { id: 'base-c2', widthRatio: 1, drawers: 0, doors: 1, shelves: 1, hangingRod: false },
+      { id: 'base-c1', widthRatio: 1, drawers: 2, doors: 0, shelves: 0, hangingRod: false, drawerPosition: 'top' },
+      { id: 'base-c2', widthRatio: 1, drawers: 0, doors: 1, shelves: 1, hangingRod: false, drawerPosition: 'top' },
     ],
   },
 };
@@ -69,7 +70,7 @@ export const WALL_CABINET: CabinetTemplate<CabinetParams> = {
     baseType: 'none',
     plinthHeight: 0,
     plinthSetback: 0,
-    columns: [{ id: 'wall-c1', widthRatio: 1, drawers: 0, doors: 2, shelves: 2, hangingRod: false }],
+    columns: [{ id: 'wall-c1', widthRatio: 1, drawers: 0, doors: 2, shelves: 2, hangingRod: false, drawerPosition: 'top' }],
   },
 };
 
@@ -87,8 +88,8 @@ export const WARDROBE: CabinetTemplate<CabinetParams> = {
     plinthHeight: 80,
     plinthSetback: 30,
     columns: [
-      { id: 'ward-c1', widthRatio: 1, drawers: 0, doors: 1, shelves: 4, hangingRod: false },
-      { id: 'ward-c2', widthRatio: 1, drawers: 0, doors: 1, shelves: 1, hangingRod: true },
+      { id: 'ward-c1', widthRatio: 1, drawers: 0, doors: 1, shelves: 4, hangingRod: false, drawerPosition: 'top' },
+      { id: 'ward-c2', widthRatio: 1, drawers: 0, doors: 1, shelves: 1, hangingRod: true, drawerPosition: 'top' },
     ],
   },
 };

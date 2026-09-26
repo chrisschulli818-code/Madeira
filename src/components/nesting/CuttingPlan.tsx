@@ -27,12 +27,12 @@ export function NestingSummary({ group }: { group: NestingResult }) {
 }
 
 export function CuttingPlan() {
-  const { nesting, sheet, model } = useResults();
+  const { nesting, sheet, pieces, items } = useResults();
   const hoveredId = useProjectStore((s) => s.hoveredPieceId);
   const hoverPiece = useProjectStore((s) => s.hoverPiece);
   const colorFor = (group: NestingResult) => {
     const firstId = group.sheets[0]?.placements[0]?.pieceId;
-    const role = model.pieces.find((p) => p.id === firstId)?.material ?? 'carcass';
+    const role = pieces.find((p) => p.id === firstId)?.material ?? 'carcass';
     return MATERIAL_COLORS[role];
   };
   const totalSheets = nesting.reduce((n, g) => n + g.sheets.length, 0);
@@ -41,7 +41,7 @@ export function CuttingPlan() {
     <div className="h-full space-y-6 overflow-auto p-4">
       <p className="text-xs text-subtle">
         Chapa {sheet.length} × {sheet.width} mm · kerf {sheet.kerf} mm · refilo {sheet.trim} mm · total de <strong>{totalSheets}</strong> chapa(s). Algoritmo guilhotina
-        (cortes de ponta a ponta), compatível com seccionadora e serra circular com guia. Hachurado = sobra/retalho.
+        (cortes de ponta a ponta), compatível com seccionadora e serra circular com guia. Hachurado = sobra/retalho.{items.length > 1 && ' As peças de todos os móveis do projeto dividem as mesmas chapas.'}
       </p>
       {nesting.map((group) => (
         <section key={group.materialKey} className="space-y-3">
