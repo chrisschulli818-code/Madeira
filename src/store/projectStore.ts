@@ -10,7 +10,12 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
+  FurniturePlacement,
+  RoomOpening,
+  RoomSettings,
   CabinetParams,
+  CustomPanel,
+  CustomParams,
   ColumnConfig,
   MaterialRole,
   MaterialSpec,
@@ -23,6 +28,8 @@ import type {
 } from '@/types/woodcraft';
 import { defaultParamsFor, makeColumn, TEMPLATES } from '@/engine/templates';
 import { DEFAULT_PRICES } from '@/engine/budgetEngine';
+import { createPanel, newPanelId, type PanelPreset } from '@/engine/customEngine';
+import { DEFAULT_ROOM, newOpeningId } from '@/engine/roomEngine';
 import {
   createItem,
   DEFAULT_MATERIALS,
@@ -34,7 +41,7 @@ import {
 } from '@/engine/projectFile';
 
 export { DEFAULT_MATERIALS, DEFAULT_SHEET };
-export type CarcassTemplateId = Exclude<TemplateId, 'workbench'>;
+export type { CarcassTemplateId } from '@/types/woodcraft';
 
 export interface ProjectState extends ProjectData {
   activeItemId: string;
@@ -44,6 +51,23 @@ export interface ProjectState extends ProjectData {
   // Estado de interação (não persistido)
   selectedPieceId: string | null;
   hoveredPieceId: string | null;
+  /** Tela expandida: só o painel de edição e o viewport, sem cabeçalho nem abas de resultados. */
+  expanded: boolean;
+  setExpanded: (expanded: boolean) => void;
+  /** Tela principal: editar um móvel ou organizar o ambiente. */
+  viewMode: 'furniture' | 'room';
+  setViewMode: (mode: 'furniture' | 'room') => void;
+  selectedPlacement: string | null;
+  selectPlacement: (key: string | null) => void;
+  // Ambiente
+  setRoom: (patch: Partial<Omit<RoomSettings, 'openings'>>) => void;
+  addOpening: (kind: RoomOpening['kind']) => void;
+  updateOpening: (id: string, patch: Partial<RoomOpening>) => void;
+  removeOpening: (id: string) => void;
+  /** Grava a posição de uma unidade de móvel no cômodo. */
+  setPlacement: (placement: FurniturePlacement) => void;
+  /** Volta todos os móveis para a organização automática. */
+  resetPlacements: () => void;
 
   setProjectName: (name: string) => void;
   // Móveis
@@ -52,6 +76,8 @@ export interface ProjectState extends ProjectData {
   removeItem: (id: string) => void;
   setActiveItem: (id: string) => void;
   updateItem: (id: string, patch: { name?: string; quantity?: number }) => void;
+  /** Substitui um móvel inteiro (usado ao arrastar e encaixar peças). */
+  replaceItem: (item: ProjectItem) => void;
   // Parâmetros do móvel ativo
   updateCabinet: (patch: Partial<CabinetParams>) => void;
   updateColumn: (columnId: string, patch: Partial<ColumnConfig>) => void;
@@ -59,6 +85,13 @@ export interface ProjectState extends ProjectData {
   removeColumn: (columnId: string) => void;
   updateWorkbench: (patch: Partial<WorkbenchParams>) => void;
   resetActiveItem: () => void;
+  // Móvel livre (painéis)
+  /** Cria um painel no móvel livre ativo e devolve o painel criado. */
+  addPanel: (preset: PanelPreset) => CustomPanel | null;
+  updatePanel: (panelId: string, patch: Partial<CustomPanel>) => void;
+  duplicatePanel: (panelId: string) => void;
+  removePanel: (panelId: string) => void;
+  updateCustom: (patch: Partial<CustomParams>) => void;
   // Configurações do projeto
   setSheet: (patch: Partial<SheetSettings>) => void;
   setMaterial: (role: MaterialRole, patch: Partial<MaterialSpec>) => void;
@@ -69,22 +102,25 @@ export interface ProjectState extends ProjectData {
   setItemPrice: (itemId: string, price: number | null) => void;
   // Arquivo
   loadProject: (data: ProjectData) => void;
-  newProject: () => void;
+  /** Projeto novo: a partir do balcão padrão, ou do zero (móvel livre vazio + tela expandida). */
+  newProject: (fromScratch?: boolean) => void;
   toggleTool: (id: string) => void;
   selectPiece: (id: string | null) => void;
   hoverPiece: (id: string | null) => void;
 }
 
-function initialProject(): ProjectData & { activeItemId: string } {
-  const item = createItem('base-cabinet');
+function initialProject(fromScratch = false): ProjectData & { activeItemId: string } {
+  const item = fromScratch ? createItem('custom', 'Meu móvel') : createItem('base-cabinet');
   return {
-    projectName: 'Meu projeto',
+    projectName: fromScratch ? 'Projeto do zero' : 'Meu projeto',
     items: [item],
     activeItemId: item.id,
     sheet: DEFAULT_SHEET,
     materials: DEFAULT_MATERIALS,
     services: DEFAULT_SERVICES,
     prices: DEFAULT_PRICES,
+    room: structuredClone(DEFAULT_ROOM),
+    placements: [],
   };
 }
 
@@ -111,13 +147,44 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => ({ items: s.items.map((i) => (i.id === s.activeItemId ? fn(i) : i)) }));
       /** Aplica uma alteração nos parâmetros do móvel ativo, se for de caixa. */
       const patchCabinet = (fn: (p: CabinetParams) => CabinetParams) =>
-        patchActive((i) => (i.templateId === 'workbench' ? i : { ...i, params: fn(i.params) }));
+        patchActive((i) => (i.templateId === 'workbench' || i.templateId === 'custom' ? i : { ...i, params: fn(i.params) }));
+      /** Aplica uma alteração nos painéis do móvel livre ativo. */
+      const patchCustom = (fn: (p: CustomParams) => CustomParams) =>
+        patchActive((i) => (i.templateId === 'custom' ? { ...i, params: fn(i.params) } : i));
 
       return {
         ...initialProject(),
         toolChecks: {},
         selectedPieceId: null,
         hoveredPieceId: null,
+        expanded: false,
+        viewMode: 'furniture',
+        selectedPlacement: null,
+
+        setViewMode: (viewMode) => set({ viewMode, selectedPieceId: null, hoveredPieceId: null }),
+        selectPlacement: (selectedPlacement) => set({ selectedPlacement }),
+        setRoom: (patch) => set((s) => ({ room: { ...s.room, ...patch } })),
+        addOpening: (kind) =>
+          set((s) => ({
+            room: {
+              ...s.room,
+              openings: [
+                ...s.room.openings,
+                kind === 'porta'
+                  ? { id: newOpeningId(), kind, wall: 'frente', offset: 200, width: 800, height: 2100, sill: 0 }
+                  : { id: newOpeningId(), kind, wall: 'fundo', offset: Math.max(0, s.room.width / 2 - 600), width: 1200, height: 1000, sill: 1100 },
+              ],
+            },
+          })),
+        updateOpening: (id, patch) =>
+          set((s) => ({ room: { ...s.room, openings: s.room.openings.map((o) => (o.id === id ? { ...o, ...patch } : o)) } })),
+        removeOpening: (id) => set((s) => ({ room: { ...s.room, openings: s.room.openings.filter((o) => o.id !== id) } })),
+        setPlacement: (placement) =>
+          set((s) => {
+            const others = s.placements.filter((p) => !(p.itemId === placement.itemId && p.unit === placement.unit));
+            return { placements: [...others, placement] };
+          }),
+        resetPlacements: () => set({ placements: [] }),
 
         setProjectName: (projectName) => set({ projectName }),
 
@@ -138,7 +205,12 @@ export const useProjectStore = create<ProjectState>()(
           set((s) => {
             if (s.items.length <= 1) return {};
             const items = s.items.filter((i) => i.id !== id);
-            return { items, activeItemId: s.activeItemId === id ? items[0]!.id : s.activeItemId, selectedPieceId: null };
+            return {
+              items,
+              placements: s.placements.filter((p) => p.itemId !== id),
+              activeItemId: s.activeItemId === id ? items[0]!.id : s.activeItemId,
+              selectedPieceId: null,
+            };
           }),
         setActiveItem: (activeItemId) => set({ activeItemId, selectedPieceId: null, hoveredPieceId: null }),
         updateItem: (id, patch) =>
@@ -150,20 +222,70 @@ export const useProjectStore = create<ProjectState>()(
             ),
           })),
 
+        replaceItem: (item) =>
+          set((s) => {
+            const current = s.items.find((i) => i.id === item.id);
+            if (!current || current === item || JSON.stringify(current.params) === JSON.stringify(item.params)) return {};
+            return { items: s.items.map((i) => (i.id === item.id ? item : i)) };
+          }),
+
         updateCabinet: (patch) => patchCabinet((p) => ({ ...p, ...patch })),
         updateColumn: (columnId, patch) =>
-          patchCabinet((p) => ({ ...p, columns: p.columns.map((c) => (c.id === columnId ? { ...c, ...patch } : c)) })),
+          patchCabinet((p) => ({
+            ...p,
+            columns: p.columns.map((c) => {
+              if (c.id !== columnId) return c;
+              const next = { ...c, ...patch };
+              // Mudou a quantidade de prateleiras: volta a distribuir automaticamente.
+              if (patch.shelves !== undefined && patch.shelves !== c.shelves) delete next.shelfPositions;
+              return next;
+            }),
+          })),
         addColumn: () => patchCabinet((p) => ({ ...p, columns: [...p.columns, makeColumn({ doors: 1, shelves: 1 })] })),
         removeColumn: (columnId) =>
           patchCabinet((p) => (p.columns.length <= 1 ? p : { ...p, columns: p.columns.filter((c) => c.id !== columnId) })),
         updateWorkbench: (patch) =>
           patchActive((i) => (i.templateId === 'workbench' ? { ...i, params: { ...i.params, ...patch } } : i)),
         resetActiveItem: () =>
-          patchActive((i) =>
-            i.templateId === 'workbench'
-              ? { ...i, params: defaultParamsFor('workbench') }
-              : { ...i, params: defaultParamsFor(i.templateId) },
-          ),
+          patchActive((i) => {
+            switch (i.templateId) {
+              case 'workbench':
+                return { ...i, params: defaultParamsFor('workbench') };
+              case 'custom':
+                return { ...i, params: defaultParamsFor('custom') };
+              default:
+                return { ...i, params: defaultParamsFor(i.templateId) };
+            }
+          }),
+
+        addPanel: (preset) => {
+          let created: CustomPanel | null = null;
+          patchCustom((p) => {
+            created = createPanel(preset, p.panels);
+            return { ...p, panels: [...p.panels, created] };
+          });
+          return created;
+        },
+        updatePanel: (panelId, patch) =>
+          patchCustom((p) => ({ ...p, panels: p.panels.map((panel) => (panel.id === panelId ? { ...panel, ...patch } : panel)) })),
+        duplicatePanel: (panelId) =>
+          patchCustom((p) => {
+            const source = p.panels.find((panel) => panel.id === panelId);
+            if (!source) return p;
+            // A cópia é deslocada para o lado, no eixo da espessura, para não ficar sobreposta.
+            const offset = source.thickness + 50;
+            const copy: CustomPanel = {
+              ...structuredClone(source),
+              id: newPanelId(),
+              name: `${source.name} (cópia)`,
+              x: source.orientation === 'side' ? source.x + offset : source.x,
+              y: source.orientation === 'horizontal' ? source.y + offset : source.y,
+              z: source.orientation === 'front' ? source.z + offset : source.z,
+            };
+            return { ...p, panels: [...p.panels, copy] };
+          }),
+        removePanel: (panelId) => patchCustom((p) => ({ ...p, panels: p.panels.filter((panel) => panel.id !== panelId) })),
+        updateCustom: (patch) => patchCustom((p) => ({ ...p, ...patch })),
 
         setSheet: (patch) => set((s) => ({ sheet: { ...s.sheet, ...patch } })),
         setMaterial: (role, patch) => set((s) => ({ materials: { ...s.materials, [role]: { ...s.materials[role], ...patch } } })),
@@ -174,7 +296,9 @@ export const useProjectStore = create<ProjectState>()(
 
         loadProject: (data) =>
           set({ ...data, activeItemId: data.items[0]!.id, toolChecks: {}, selectedPieceId: null, hoveredPieceId: null }),
-        newProject: () => set({ ...initialProject(), toolChecks: {}, selectedPieceId: null, hoveredPieceId: null }),
+        newProject: (fromScratch = false) =>
+          set({ ...initialProject(fromScratch), toolChecks: {}, selectedPieceId: null, hoveredPieceId: null, expanded: fromScratch }),
+        setExpanded: (expanded) => set({ expanded }),
         toggleTool: (id) => set((s) => ({ toolChecks: { ...s.toolChecks, [id]: !s.toolChecks[id] } })),
         selectPiece: (selectedPieceId) => set({ selectedPieceId }),
         hoverPiece: (hoveredPieceId) => set({ hoveredPieceId }),
@@ -184,7 +308,7 @@ export const useProjectStore = create<ProjectState>()(
       name: 'woodcraft-planner:v1',
       version: 2,
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ selectedPieceId: _s, hoveredPieceId: _h, ...rest }) => rest,
+      partialize: ({ selectedPieceId: _s, hoveredPieceId: _h, expanded: _e, viewMode: _v, selectedPlacement: _p, ...rest }) => rest,
       migrate: (persisted, version) => migrateState(persisted, version) as unknown as ProjectState,
     },
   ),

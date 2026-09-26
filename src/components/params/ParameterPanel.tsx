@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import type { AssemblyMethod, CabinetParams, MaterialRole, TemplateId, WorkbenchParams } from '@/types/woodcraft';
 import { FieldRow, NumberInput, Section, Segmented, SliderField, Stepper, ThicknessPicker } from './fields';
 import { ColumnEditor } from './ColumnEditor';
+import { CustomPanelEditor } from './CustomPanelEditor';
 
 const ASSEMBLY_OPTIONS: { value: AssemblyMethod; label: string; title: string }[] = [
   { value: 'screw', label: 'Parafuso', title: 'Parafuso direto (chipboard) com pré-furo' },
@@ -255,7 +256,13 @@ export function ParameterPanel() {
               {template.name} — {template.description}
             </p>
           </div>
-          <Button variant="ghost" size="icon" title="Restaurar medidas padrão deste móvel" aria-label="Restaurar padrão" onClick={resetActiveItem}>
+          <Button
+            variant="ghost"
+            size="icon"
+            title={item.templateId === 'custom' ? 'Apagar todas as peças (voltar à tela em branco)' : 'Restaurar medidas padrão deste móvel'}
+            aria-label="Restaurar padrão"
+            onClick={() => (item.templateId !== 'custom' || confirm('Apagar todas as peças deste móvel?')) && resetActiveItem()}
+          >
             <RotateCcw />
           </Button>
         </div>
@@ -266,6 +273,8 @@ export function ParameterPanel() {
       <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {item.templateId === 'workbench' ? (
           <WorkbenchForm key={item.id} params={item.params} />
+        ) : item.templateId === 'custom' ? (
+          <CustomPanelEditor key={item.id} params={item.params} itemId={item.id} />
         ) : (
           <CabinetForm key={item.id} params={item.params} templateId={item.templateId} />
         )}

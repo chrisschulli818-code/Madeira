@@ -4,6 +4,8 @@ import { Header } from '@/components/layout/Header';
 import { ProjectItemsBar } from '@/components/layout/ProjectItemsBar';
 import { ParameterPanel } from '@/components/params/ParameterPanel';
 import { Viewport } from '@/components/viewport/Viewport';
+import { RoomView } from '@/components/room/RoomView';
+import { RoomPanel } from '@/components/room/RoomPanel';
 import { CutListTable } from '@/components/cutlist/CutListTable';
 import { CuttingPlan } from '@/components/nesting/CuttingPlan';
 import { HardwareSummary } from '@/components/hardware/HardwareSummary';
@@ -13,6 +15,8 @@ import { PrintReport } from '@/components/report/PrintReport';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fmtMoney } from '@/lib/utils';
+import { useProjectStore } from '@/store/projectStore';
+import { useExpandedShortcuts } from '@/hooks/useExpanded';
 
 function ResultsTabs() {
   const { pieces, nesting, hardware, tools, budget } = useResults();
@@ -68,23 +72,33 @@ function ResultsTabs() {
  * - Celular: viewport 3D primeiro, depois os parâmetros e por fim os resultados.
  */
 export default function App() {
+  useExpandedShortcuts();
+  const expanded = useProjectStore((s) => s.expanded);
+  const roomMode = useProjectStore((s) => s.viewMode === 'room');
+  const side = roomMode ? <RoomPanel /> : <ParameterPanel />;
+  const main = roomMode ? <RoomView /> : <Viewport />;
+
   return (
     <ProjectResultsProvider>
+      {expanded ? (
+        // Tela expandida (limpa): só o painel de edição e o viewport, ocupando a tela toda.
+        <div className="flex h-full flex-col print:hidden lg:grid lg:grid-cols-[380px_1fr]">
+          <div className="order-2 min-h-0 overflow-y-auto lg:order-1 lg:overflow-hidden">{side}</div>
+          <div className="order-1 h-[60vh] p-2 lg:order-2 lg:h-full">{main}</div>
+        </div>
+      ) : (
       <div className="flex min-h-full flex-col print:hidden lg:h-full">
         <Header />
         <ProjectItemsBar />
         <div className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[340px_1fr] lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="order-1 h-[380px] p-3 pb-0 sm:h-[440px] lg:col-start-2 lg:row-start-1 lg:h-auto lg:min-h-0 lg:pb-1.5">
-            <Viewport />
-          </div>
-          <div className="order-2 mt-3 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:min-h-0">
-            <ParameterPanel />
-          </div>
+          <div className="order-1 h-[380px] p-3 pb-0 sm:h-[440px] lg:col-start-2 lg:row-start-1 lg:h-auto lg:min-h-0 lg:pb-1.5">{main}</div>
+          <div className="order-2 mt-3 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:min-h-0">{side}</div>
           <div className="order-3 p-3 lg:col-start-2 lg:row-start-2 lg:min-h-0 lg:pt-1.5">
             <ResultsTabs />
           </div>
         </div>
       </div>
+      )}
       <PrintReport />
     </ProjectResultsProvider>
   );

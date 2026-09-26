@@ -6,7 +6,11 @@
  * arquivos antigos ou editados à mão não quebrem o app.
  */
 import type {
+  FurniturePlacement,
+  RoomSettings,
+  Rotation,
   CabinetParams,
+  CustomPanel,
   ColumnConfig,
   MaterialRole,
   MaterialSpec,
@@ -19,6 +23,8 @@ import type {
 } from '@/types/woodcraft';
 import { DEFAULT_PRICES } from './budgetEngine';
 import { defaultParamsFor, makeColumn, TEMPLATES } from './templates';
+import { newPanelId } from './customEngine';
+import { DEFAULT_ROOM, newOpeningId } from './roomEngine';
 
 export const PROJECT_FILE_APP = 'woodcraft-planner';
 export const PROJECT_FILE_VERSION = 2;
@@ -31,6 +37,10 @@ export interface ProjectData {
   materials: Record<MaterialRole, MaterialSpec>;
   services: ServiceSettings;
   prices: PriceSettings;
+  /** Cômodo onde os móveis são posicionados. */
+  room: RoomSettings;
+  /** Posições dos móveis no cômodo (só as que o usuário ajustou; o resto é automático). */
+  placements: FurniturePlacement[];
 }
 
 export interface ProjectFile extends ProjectData {
@@ -56,9 +66,14 @@ export const newItemId = () => `m${Date.now().toString(36)}${(itemSeq++).toStrin
 /** Cria um novo móvel a partir de um template. */
 export function createItem(templateId: TemplateId, name?: string): ProjectItem {
   const base = { id: newItemId(), name: name ?? TEMPLATES[templateId].name, quantity: 1 };
-  return templateId === 'workbench'
-    ? { ...base, templateId, params: defaultParamsFor('workbench') }
-    : { ...base, templateId, params: defaultParamsFor(templateId) };
+  switch (templateId) {
+    case 'workbench':
+      return { ...base, templateId, params: defaultParamsFor('workbench') };
+    case 'custom':
+      return { ...base, templateId, params: defaultParamsFor('custom') };
+    default:
+      return { ...base, templateId, params: defaultParamsFor(templateId) };
+  }
 }
 
 export function serializeProject(data: ProjectData): string {
@@ -100,7 +115,37 @@ function parseColumn(raw: unknown): ColumnConfig {
     shelves: Math.max(0, Math.floor(numOr(c.shelves, 0))),
     hangingRod: boolOr(c.hangingRod, false),
     drawerPosition: c.drawerPosition === 'bottom' ? 'bottom' : 'top',
+    ...(Array.isArray(c.shelfPositions) && c.shelfPositions.every((v) => typeof v === 'number' && Number.isFinite(v))
+      ? { shelfPositions: c.shelfPositions as number[] }
+      : {}),
   });
+}
+
+const PANEL_KINDS = ['estrutura', 'prateleira', 'fundo', 'porta', 'frente', 'gaveta'] as const;
+const ORIENTATIONS = ['side', 'front', 'horizontal'] as const;
+const edgeCount = (v: unknown): 0 | 1 | 2 => (v === 1 || v === 2 ? v : 0);
+
+function parsePanel(raw: unknown): CustomPanel | null {
+  if (!isObj(raw)) return null;
+  const kind = PANEL_KINDS.find((k) => k === raw.kind) ?? 'estrutura';
+  const orientation = ORIENTATIONS.find((o) => o === raw.orientation) ?? 'side';
+  const edge = isObj(raw.edgeBanding) ? raw.edgeBanding : {};
+  const dim = (v: unknown, d: number) => Math.max(0, numOr(v, d));
+  return {
+    id: strOr(raw.id, newPanelId()),
+    name: strOr(raw.name, 'Painel'),
+    kind,
+    orientation,
+    width: dim(raw.width, 600),
+    height: dim(raw.height, 600),
+    depth: dim(raw.depth, 400),
+    thickness: Math.max(1, numOr(raw.thickness, 18)),
+    x: numOr(raw.x, 0),
+    y: numOr(raw.y, 0),
+    z: numOr(raw.z, 0),
+    edgeBanding: { length: edgeCount(edge.length), width: edgeCount(edge.width) },
+    grainLocked: boolOr(raw.grainLocked, kind !== 'fundo'),
+  };
 }
 
 const ENUMS: Partial<Record<keyof CabinetParams, readonly string[]>> = {
@@ -122,6 +167,18 @@ export function parseItem(raw: unknown): ProjectItem | null {
     const params = mergeKnown<WorkbenchParams>(defaultParamsFor('workbench'), raw.params);
     if (!['screw', 'minifix', 'dowel'].includes(params.assembly)) params.assembly = 'screw';
     return { ...base, templateId, params };
+  }
+  if (templateId === 'custom') {
+    const rawPanels = isObj(raw.params) && Array.isArray(raw.params.panels) ? raw.params.panels : [];
+    const assembly = isObj(raw.params) ? raw.params.assembly : undefined;
+    return {
+      ...base,
+      templateId,
+      params: {
+        panels: rawPanels.map(parsePanel).filter((p): p is CustomPanel => p !== null),
+        assembly: assembly === 'minifix' || assembly === 'dowel' ? assembly : 'screw',
+      },
+    };
   }
   const defaults = defaultParamsFor(templateId);
   const params = mergeKnown<CabinetParams>(defaults, raw.params);
@@ -148,6 +205,44 @@ function parsePriceMap(raw: unknown): Record<string, number> {
   return Object.fromEntries(Object.entries(raw).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1]) && e[1] >= 0));
 }
 
+const WALLS = ['fundo', 'frente', 'esquerda', 'direita'] as const;
+
+function parseRoom(raw: unknown): RoomSettings {
+  const base = mergeKnown({ name: DEFAULT_ROOM.name, width: DEFAULT_ROOM.width, depth: DEFAULT_ROOM.depth, height: DEFAULT_ROOM.height }, raw);
+  const room: RoomSettings = {
+    ...base,
+    width: Math.max(500, base.width),
+    depth: Math.max(500, base.depth),
+    height: Math.max(1000, base.height),
+    openings: structuredClone(DEFAULT_ROOM.openings),
+  };
+  if (isObj(raw) && Array.isArray(raw.openings)) {
+    room.openings = raw.openings.filter(isObj).map((o) => ({
+      id: strOr(o.id, newOpeningId()),
+      kind: o.kind === 'janela' ? 'janela' : 'porta',
+      wall: WALLS.find((w) => w === o.wall) ?? 'fundo',
+      offset: Math.max(0, numOr(o.offset, 0)),
+      width: Math.max(100, numOr(o.width, 800)),
+      height: Math.max(100, numOr(o.height, 2100)),
+      sill: Math.max(0, numOr(o.sill, 0)),
+    }));
+  }
+  return room;
+}
+
+function parsePlacement(raw: unknown): FurniturePlacement | null {
+  if (!isObj(raw) || typeof raw.itemId !== 'string') return null;
+  const rotation = [0, 90, 180, 270].includes(raw.rotation as number) ? (raw.rotation as Rotation) : 0;
+  return {
+    itemId: raw.itemId,
+    unit: Math.max(0, Math.floor(numOr(raw.unit, 0))),
+    x: numOr(raw.x, 0),
+    z: numOr(raw.z, 0),
+    rotation,
+    elevation: numOr(raw.elevation, 0),
+  };
+}
+
 export type ParseResult = { ok: true; data: ProjectData } | { ok: false; error: string };
 
 /** Lê o conteúdo de um arquivo de projeto. */
@@ -172,6 +267,11 @@ export function parseProjectFile(text: string): ParseResult {
   prices.sheetPrices = parsePriceMap(rawPrices.sheetPrices);
   prices.itemPrices = parsePriceMap(rawPrices.itemPrices);
 
+  const itemIds = new Set(items.map((i) => i.id));
+  const placements = (Array.isArray(raw.placements) ? raw.placements : [])
+    .map(parsePlacement)
+    .filter((p): p is FurniturePlacement => p !== null && itemIds.has(p.itemId));
+
   const sheet = mergeKnown(DEFAULT_SHEET, raw.sheet);
   if (sheet.length < 300 || sheet.width < 300) Object.assign(sheet, DEFAULT_SHEET);
 
@@ -184,6 +284,8 @@ export function parseProjectFile(text: string): ParseResult {
       materials: parseMaterials(raw.materials),
       services: mergeKnown(DEFAULT_SERVICES, raw.services),
       prices,
+      room: parseRoom(raw.room),
+      placements,
     },
   };
 }

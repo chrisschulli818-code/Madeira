@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
-import { AlertTriangle, Box as BoxIcon, Loader2, PanelLeft, Square } from 'lucide-react';
+import { AlertTriangle, Box as BoxIcon, Hand, Loader2, Maximize2, Minimize2, PanelLeft, Square } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
 import { useResults } from '@/hooks/ProjectResults';
 import { Card } from '@/components/ui/card';
@@ -7,6 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Elevation2D } from './Elevation2D';
+import { Button } from '@/components/ui/button';
+import { useExpanded } from '@/hooks/useExpanded';
+import { useDragPieces } from '@/hooks/useDragPieces';
 
 // Three.js é pesado: carregado sob demanda para o primeiro render ser rápido.
 const Scene3D = lazy(() => import('./Scene3D'));
@@ -28,6 +31,9 @@ export function Viewport() {
   const selectPiece = useProjectStore((s) => s.selectPiece);
   const [showFronts, setShowFronts] = useState(true);
   const [explode, setExplode] = useState(0);
+  const { expanded, toggle } = useExpanded();
+  const drag = useDragPieces(explode === 0);
+  const canMove = (model.handles?.length ?? 0) > 0;
 
   const focus = model.pieces.find((p) => p.id === (hoveredId ?? selectedId));
   const common = { model, showFronts, hoveredId, selectedId, onHover: hoverPiece, onSelect: selectPiece };
@@ -54,20 +60,44 @@ export function Viewport() {
             Explodir
             <Slider aria-label="Vista explodida" value={[explode]} min={0} max={1} step={0.05} onValueChange={([v]) => setExplode(v ?? 0)} />
           </label>
+          <Button
+            variant={expanded ? 'default' : 'outline'}
+            size="sm"
+            className="ml-auto"
+            onClick={() => toggle()}
+            title={expanded ? 'Sair da tela expandida (Esc)' : 'Tela expandida: só o editor e o 3D'}
+          >
+            {expanded ? <Minimize2 /> : <Maximize2 />} {expanded ? 'Sair da tela expandida' : 'Expandir'}
+          </Button>
         </div>
         <div className="relative min-h-0 flex-1">
           <TabsContent value="3d" className="absolute inset-0">
             <Suspense fallback={<Loading />}>
-              <Scene3D {...common} explode={explode} />
+              <Scene3D {...common} explode={explode} drag={drag} />
             </Suspense>
           </TabsContent>
           <TabsContent value="front" className="absolute inset-0 p-4">
-            <Elevation2D {...common} view="front" className="h-full w-full" />
+            <Elevation2D {...common} view="front" className="h-full w-full" drag={drag} />
           </TabsContent>
           <TabsContent value="side" className="absolute inset-0 p-4">
             <Elevation2D {...common} view="side" className="h-full w-full" />
           </TabsContent>
 
+          {canMove && (
+            <div className="pointer-events-none absolute right-3 top-3 hidden max-w-64 items-start gap-1.5 rounded-md border border-border bg-surface/90 px-2.5 py-1.5 text-[11px] leading-snug text-subtle shadow-sm sm:flex">
+              <Hand className="mt-px size-3.5 shrink-0 text-primary" />
+              {explode > 0
+                ? 'Feche a vista explodida para arrastar peças.'
+                : drag.dragging
+                  ? 'Solte para encaixar.'
+                  : `Arraste prateleiras e gavetas (no 3D ou na vista frontal) — elas se encaixam sozinhas.${showFronts ? ' Desligue “Frentes” para alcançar o que fica atrás das portas.' : ''}`}
+            </div>
+          )}
+          {model.pieces.length === 0 && (
+            <div className="pointer-events-none absolute inset-x-0 top-1/3 mx-auto w-fit max-w-[90%] rounded-lg border border-dashed border-border bg-surface/90 px-4 py-3 text-center text-sm text-subtle shadow-sm">
+              Tela em branco — adicione peças no painel de parâmetros para começar.
+            </div>
+          )}
           {focus && (
             <div className="pointer-events-none absolute left-3 top-3 rounded-md border border-border bg-surface/95 px-3 py-2 text-xs shadow-sm backdrop-blur">
               <div className="font-semibold">

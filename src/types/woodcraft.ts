@@ -13,7 +13,10 @@
 // Parâmetros de projeto
 // ---------------------------------------------------------------------------
 
-export type TemplateId = 'base-cabinet' | 'wall-cabinet' | 'wardrobe' | 'workbench';
+/** Templates de móveis de caixa (laterais, base, tampo, vãos). */
+export type CarcassTemplateId = 'base-cabinet' | 'wall-cabinet' | 'wardrobe';
+/** `custom` = móvel livre, montado peça por peça a partir do zero. */
+export type TemplateId = CarcassTemplateId | 'workbench' | 'custom';
 
 /** Tipo de montagem estrutural da caixa. */
 export type AssemblyMethod = 'screw' | 'minifix' | 'dowel';
@@ -53,6 +56,11 @@ export interface ColumnConfig {
    * Opcional para compatibilidade com projetos salvos antes deste campo (= 'top').
    */
   drawerPosition?: 'top' | 'bottom';
+  /**
+   * Posições manuais das prateleiras móveis (mm, da face de cima da peça de baixo do vão até a
+   * face de baixo da prateleira). Definidas ao arrastar; ignoradas se não baterem com `shelves`.
+   */
+  shelfPositions?: number[];
   /** Folhas de porta: 0 (vão aberto/sem porta), 1 ou 2. */
   doors: 0 | 1 | 2;
   /** Prateleiras móveis na região das portas (ou do vão aberto). */
@@ -109,12 +117,56 @@ export interface WorkbenchParams {
   assembly: AssemblyMethod;
 }
 
+/** Orientação de um painel do móvel livre (qual eixo é a espessura). */
+export type PanelOrientation =
+  /** Em pé, de lado (como uma lateral): espessura no eixo X. */
+  | 'side'
+  /** Em pé, de frente (como fundo ou porta): espessura no eixo Z. */
+  | 'front'
+  /** Deitado (como base, tampo ou prateleira): espessura no eixo Y. */
+  | 'horizontal';
+
+/** Função do painel no móvel livre (define material, fita e ferragens). */
+export type CustomPanelKind = 'estrutura' | 'prateleira' | 'fundo' | 'porta' | 'frente' | 'gaveta';
+
+/**
+ * Painel do móvel livre, posicionado manualmente.
+ * Para `kind: 'gaveta'` o registro descreve o módulo de gaveta: largura do vão (width),
+ * altura da frente (height), profundidade do vão (depth) e espessura da frente (thickness).
+ */
+export interface CustomPanel {
+  id: string;
+  name: string;
+  kind: CustomPanelKind;
+  orientation: PanelOrientation;
+  /** Medida no eixo X (ignorada quando a orientação é `side`: vira a espessura). */
+  width: number;
+  /** Medida no eixo Y (ignorada quando `horizontal`). */
+  height: number;
+  /** Medida no eixo Z (ignorada quando `front`). */
+  depth: number;
+  thickness: number;
+  /** Canto inferior-esquerdo-traseiro do painel (mm). */
+  x: number;
+  y: number;
+  z: number;
+  edgeBanding: EdgeBanding;
+  /** Veio travado no comprimento (não gira no plano de corte em chapa amadeirada). */
+  grainLocked: boolean;
+}
+
+/** Parâmetros do móvel livre: uma lista de painéis posicionados à mão. */
+export interface CustomParams {
+  panels: CustomPanel[];
+  assembly: AssemblyMethod;
+}
+
 /** Descrição de um template paramétrico para a interface. */
-export interface CabinetTemplate<P = CabinetParams | WorkbenchParams> {
+export interface CabinetTemplate<P = CabinetParams | WorkbenchParams | CustomParams> {
   id: TemplateId;
   name: string;
   description: string;
-  kind: 'carcass' | 'workbench';
+  kind: 'carcass' | 'workbench' | 'custom';
   defaults: P;
   /** Limites sugeridos para sliders (mm). */
   limits: {
@@ -191,6 +243,8 @@ export interface CutPiece {
   /** Posição de cada unidade no móvel montado (quantity itens). */
   instances: Box3D[];
   notes?: string;
+  /** Móvel livre: ids dos painéis que geraram esta linha (para ligar lista, 3D e editor). */
+  sourceIds?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +281,31 @@ export interface Joint {
   bracket?: boolean;
 }
 
+/** Faixa vertical onde as prateleiras móveis de um vão podem ficar. */
+export interface ShelfRegion {
+  /** Face de cima da peça de baixo (base ou prateleira fixa). */
+  bottom: number;
+  /** Face de baixo da peça de cima (tampo, travessa ou prateleira fixa). */
+  top: number;
+  /** Aceita prateleiras (vão só de gavetas não aceita). */
+  acceptsShelves: boolean;
+  /** Posições atuais das prateleiras (offset a partir de `bottom`, crescente). */
+  shelves: number[];
+}
+
+/** Peça que pode ser arrastada no viewport (prateleira, gaveta ou painel do móvel livre). */
+export interface DragHandle {
+  kind: 'shelf' | 'drawer' | 'panel';
+  /** Instância 3D correspondente (mesma referência de `CutPiece.instances`). */
+  box: Box3D;
+  /** Vão (móveis de caixa). */
+  column?: number;
+  /** Índice da prateleira/gaveta dentro do vão. */
+  index?: number;
+  /** Painel do móvel livre. */
+  panelId?: string;
+}
+
 export interface AssembledModel {
   templateId: TemplateId;
   overall: { width: number; height: number; depth: number };
@@ -246,7 +325,11 @@ export interface AssembledModel {
     columns: Array<[number, number]>;
     plinthHeight: number;
     internalDepth: number;
+    /** Região de prateleiras de cada vão (móveis de caixa). */
+    regions?: ShelfRegion[];
   };
+  /** Peças que podem ser arrastadas e encaixadas no viewport. */
+  handles?: DragHandle[];
   warnings: string[];
 }
 
@@ -360,7 +443,8 @@ interface ProjectItemBase {
 /** Um móvel do projeto: template + parâmetros próprios. */
 export type ProjectItem =
   | (ProjectItemBase & { templateId: 'workbench'; params: WorkbenchParams })
-  | (ProjectItemBase & { templateId: Exclude<TemplateId, 'workbench'>; params: CabinetParams });
+  | (ProjectItemBase & { templateId: 'custom'; params: CustomParams })
+  | (ProjectItemBase & { templateId: CarcassTemplateId; params: CabinetParams });
 
 /** Linha da lista de corte do projeto (peça de um móvel, já multiplicada pela quantidade de móveis). */
 export interface ProjectPiece extends CutPiece {
@@ -418,4 +502,73 @@ export interface Budget {
   margin: number;
   /** Preço final sugerido (custo + margem). */
   price: number;
+}
+
+// ---------------------------------------------------------------------------
+// Ambiente (cômodo com vários móveis)
+// ---------------------------------------------------------------------------
+
+/**
+ * Paredes do cômodo vistas de cima (planta): `fundo` no topo da planta (z = 0),
+ * `frente` embaixo (z = profundidade), `esquerda` (x = 0) e `direita` (x = largura).
+ */
+export type WallSide = 'fundo' | 'frente' | 'esquerda' | 'direita';
+
+/** Porta ou janela numa parede. */
+export interface RoomOpening {
+  id: string;
+  kind: 'porta' | 'janela';
+  wall: WallSide;
+  /**
+   * Posição ao longo da parede na planta (mm): a partir de x = 0 nas paredes do fundo e da frente,
+   * e a partir de z = 0 nas paredes esquerda e direita.
+   */
+  offset: number;
+  width: number;
+  height: number;
+  /** Altura do peitoril (janelas); portas começam no piso. */
+  sill: number;
+}
+
+export interface RoomSettings {
+  name: string;
+  /** Medida interna no eixo X (parede do fundo), mm. */
+  width: number;
+  /** Medida interna no eixo Z (parede esquerda), mm. */
+  depth: number;
+  height: number;
+  openings: RoomOpening[];
+}
+
+/** Rotação do móvel vista de cima. 0 = costas para a parede do fundo, frente para a frente do cômodo. */
+export type Rotation = 0 | 90 | 180 | 270;
+
+/** Posição de uma unidade de móvel no cômodo (salva no projeto). */
+export interface FurniturePlacement {
+  itemId: string;
+  /** Qual das unidades iguais (0 .. quantidade − 1). */
+  unit: number;
+  /** Canto da projeção no piso (mm), já considerando a rotação. */
+  x: number;
+  z: number;
+  rotation: Rotation;
+  /** Altura da base do móvel em relação ao piso (aéreos ficam pendurados). */
+  elevation: number;
+}
+
+/** Posição resolvida (com medidas do móvel), usada pelas vistas do ambiente. */
+export interface ResolvedPlacement extends FurniturePlacement {
+  key: string;
+  name: string;
+  templateId: TemplateId;
+  /** Medidas do móvel sem rotação (largura X, altura Y, profundidade Z incluindo frentes). */
+  size: { w: number; h: number; d: number };
+  /** Canto mínimo do conjunto de peças no sistema do móvel (para alinhar as peças ao posicionar). */
+  origin: { x: number; y: number; z: number };
+  /** Projeção no piso já rotacionada. */
+  footprint: { w: number; d: number };
+  /** Parede em que as costas do móvel estão encostadas, se houver. */
+  wall: WallSide | null;
+  /** Posição definida automaticamente (ainda não arrastada). */
+  auto: boolean;
 }

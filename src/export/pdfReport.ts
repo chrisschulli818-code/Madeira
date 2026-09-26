@@ -3,14 +3,15 @@
  *
  * Conteúdo:
  *  1. Resumo do projeto (móveis, totais e orçamento)
- *  2. Cada móvel: especificações, desenhos cotados (frontal, interna, lateral), medidas
+ *  2. Ambiente: planta do cômodo com os móveis posicionados
+ *  3. Cada móvel: especificações, desenhos cotados (frontal, interna, lateral), medidas
  *     internas, portas, gavetas e cabideiros
- *  3. Lista de corte do projeto (numerada)
- *  4. Materiais: chapas, área, aproveitamento e fita de borda por material
- *  5. Plano de corte (desenho de cada chapa, peças numeradas conforme a lista de corte)
- *  6. Lista de compras (chapas, ferragens, fixação, acabamento, insumos)
- *  7. Orçamento
- *  8. Checklist de ferramentas
+ *  4. Lista de corte do projeto (numerada)
+ *  5. Materiais: chapas, área, aproveitamento e fita de borda por material
+ *  6. Plano de corte (desenho de cada chapa, peças numeradas conforme a lista de corte)
+ *  7. Lista de compras (chapas, ferragens, fixação, acabamento, insumos)
+ *  8. Orçamento
+ *  9. Checklist de ferramentas
  *
  * Módulo sem React: recebe os resultados já calculados e devolve um documento jsPDF.
  * É carregado sob demanda pela interface (import dinâmico) para não pesar no bundle inicial.
@@ -22,6 +23,8 @@ import type {
   Budget,
   BudgetCategory,
   ProjectPiece,
+  ResolvedPlacement,
+  RoomSettings,
   Box3D,
   HardwareCategory,
   HardwareItem,
@@ -53,6 +56,9 @@ export interface PdfReportData {
   pieces: ProjectPiece[];
   nesting: NestingResult[];
   budget: Budget;
+  /** Ambiente (opcional): cômodo e posições dos móveis. */
+  room?: RoomSettings;
+  placements?: ResolvedPlacement[];
   hardware: HardwareItem[];
   tools: ToolRequirement[];
   materials: Record<MaterialRole, MaterialSpec>;
@@ -339,6 +345,95 @@ const BUDGET_LABELS: Record<BudgetCategory, string> = {
   'mao-de-obra': 'Mão de obra',
 };
 
+/** Planta do ambiente: paredes, portas, janelas e móveis numerados, com tabela de posições. */
+function writeRoom(w: Writer, n: number, room: RoomSettings, placements: ResolvedPlacement[]) {
+  const { doc } = w;
+  w.section(n, `Ambiente: ${room.name}`, { newPage: true });
+  w.paragraph(`Cômodo de ${room.width} × ${room.depth} mm (medidas internas), pé-direito de ${room.height} mm. Vista de cima; a parede do fundo fica no topo.`);
+
+  const WALL = 120;
+  const areaW = CONTENT_W;
+  const areaH = 150;
+  const s = Math.min((areaW - 20) / (room.width + 2 * WALL), (areaH - 16) / (room.depth + 2 * WALL));
+  const ox = M + (areaW - (room.width + 2 * WALL) * s) / 2 + WALL * s;
+  const oy = w.y + 8 + WALL * s;
+  const X = (v: number) => ox + v * s;
+  const Y = (v: number) => oy + v * s;
+
+  // Paredes e piso
+  doc.setFillColor(111, 101, 90);
+  doc.rect(X(-WALL), Y(-WALL), (room.width + 2 * WALL) * s, (room.depth + 2 * WALL) * s, 'F');
+  doc.setFillColor(246, 239, 228);
+  doc.rect(X(0), Y(0), room.width * s, room.depth * s, 'F');
+  // Aberturas
+  for (const o of room.openings) {
+    const r =
+      o.wall === 'fundo'
+        ? [o.offset, -WALL, o.width, WALL]
+        : o.wall === 'frente'
+          ? [o.offset, room.depth, o.width, WALL]
+          : o.wall === 'esquerda'
+            ? [-WALL, o.offset, WALL, o.width]
+            : [room.width, o.offset, WALL, o.width];
+    doc.setFillColor(...(o.kind === 'porta' ? ([246, 239, 228] as RGB) : ([219, 234, 254] as RGB)));
+    doc.setDrawColor(...SUBTLE);
+    doc.setLineWidth(0.15);
+    doc.rect(X(r[0]!), Y(r[1]!), r[2]! * s, r[3]! * s, 'FD');
+  }
+  // Móveis (piso primeiro, aéreos por cima)
+  const ordered = [...placements].map((p, i) => ({ p, i })).sort((a, b) => a.p.elevation - b.p.elevation);
+  for (const { p } of ordered) {
+    const hanging = p.elevation > 0;
+    doc.setFillColor(...(hanging ? ([199, 219, 232] as RGB) : ([222, 190, 150] as RGB)));
+    doc.setDrawColor(63, 54, 44);
+    doc.setLineWidth(0.2);
+    doc.setLineDashPattern(hanging ? [1, 0.8] : [], 0);
+    doc.rect(X(p.x), Y(p.z), p.footprint.w * s, p.footprint.d * s, 'FD');
+    doc.setLineDashPattern([], 0);
+    // Frente do móvel
+    doc.setLineWidth(0.7);
+    const { x, z } = p;
+    const { w: fw, d: fd } = p.footprint;
+    const line =
+      p.rotation === 0 ? [x, z + fd, x + fw, z + fd] : p.rotation === 90 ? [x + fw, z, x + fw, z + fd] : p.rotation === 180 ? [x, z, x + fw, z] : [x, z, x, z + fd];
+    doc.line(X(line[0]!), Y(line[1]!), X(line[2]!), Y(line[3]!));
+  }
+  // Números por cima de tudo: móveis de piso no centro, pendurados no canto (para não se esconderem).
+  for (const { p, i } of ordered) {
+    const { w: fw, d: fd } = p.footprint;
+    const size = Math.max(5, Math.min(9, fw * s * 1.2, fd * s * 1.6));
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(size);
+    doc.setTextColor(...INK);
+    if (p.elevation > 0) doc.text(String(i + 1), X(p.x) + 1.2, Y(p.z) + size * 0.4, { align: 'left' });
+    else doc.text(String(i + 1), X(p.x + fw / 2), Y(p.z + fd / 2) + 1, { align: 'center' });
+  }
+  // Cotas
+  dimension(doc, X(0), Y(-WALL), X(room.width), Y(-WALL), -3, String(room.width));
+  dimension(doc, X(-WALL), Y(0), X(-WALL), Y(room.depth), -3, String(room.depth));
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...SUBTLE);
+  doc.text('Frente do cômodo', X(room.width / 2), Y(room.depth + WALL) + 4, { align: 'center' });
+  w.y += areaH + 4;
+
+  const rotLabel = (r: number) => ({ 0: 'costas para o fundo', 90: 'costas para a esquerda', 180: 'costas para a frente', 270: 'costas para a direita' })[r] ?? `${r}°`;
+  const wallLabel = { fundo: 'Fundo', frente: 'Frente', esquerda: 'Esquerda', direita: 'Direita' } as const;
+  w.table({
+    head: [['#', 'Móvel', 'L × P × A (mm)', 'Parede', 'Posição X / Z (mm)', 'Orientação', 'Do piso']],
+    body: placements.map((p, i) => [
+      String(i + 1),
+      p.name,
+      `${Math.round(p.size.w)} × ${Math.round(p.size.d)} × ${Math.round(p.size.h)}`,
+      p.wall ? wallLabel[p.wall] : 'solto',
+      `${p.x} / ${p.z}`,
+      rotLabel(p.rotation),
+      `${p.elevation} mm`,
+    ]),
+    columnStyles: { 0: { cellWidth: 8, halign: 'right' }, 6: { halign: 'right' } },
+  });
+}
+
 /** Página de um móvel: especificações, desenhos cotados e tabelas de frentes. */
 function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: number) {
   const { doc } = w;
@@ -357,6 +452,11 @@ function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: nu
     for (const warning of model.warnings) w.paragraph(`• ${warning}`, 8, [146, 64, 14]);
   }
 
+  if (!model.pieces.length) {
+    w.paragraph('Este móvel ainda não tem peças.', 9);
+    return;
+  }
+
   // Desenhos: frontal + interna (ou lateral) em cima; lateral + medidas internas embaixo.
   const half = (CONTENT_W - 6) / 2;
   const hasFronts = model.pieces.some((p) => FRONT_ROLES.has(p.role));
@@ -372,8 +472,9 @@ function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: nu
     ['Largura externa', `${model.overall.width} mm`],
     ['Altura externa', `${model.overall.height} mm`],
     ['Profundidade da caixa', `${model.overall.depth} mm`],
-    ['Profundidade útil interna', `${Math.round(model.layout.internalDepth)} mm`],
+    ...(model.templateId === 'custom' ? [] : [['Profundidade útil interna', `${Math.round(model.layout.internalDepth)} mm`] as [string, string]]),
     ...(model.layout.plinthHeight > 0 ? [['Rodapé / pés', `${model.layout.plinthHeight} mm`] as [string, string]] : []),
+    ...(model.templateId === 'custom' ? [['Junções detectadas', String(model.joints.length)] as [string, string]] : []),
     ...model.layout.columns.map(([a, b], i): [string, string] => [
       model.templateId === 'workbench' ? 'Vão livre entre painéis' : `Vão ${i + 1} (largura interna)`,
       `${Math.round(b - a)} mm`,
@@ -501,10 +602,11 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
   );
 
   // --- 2. Móveis ----------------------------------------------------------------------
-  items.forEach((it, i) => writeItem(w, 2, it, i, items.length));
+  if (data.room) writeRoom(w, 2, data.room, data.placements ?? []);
+  items.forEach((it, i) => writeItem(w, data.room ? 3 : 2, it, i, items.length));
 
   // --- 3. Lista de corte ---------------------------------------------------------------
-  w.section(3, 'Lista de corte', { newPage: true });
+  w.section(4, 'Lista de corte', { newPage: true });
   const head = ['#', 'Peça', ...(multi ? ['Móvel'] : []), 'Qtd', 'Compr.', 'Larg.', 'Esp.', 'Material', 'Fita', 'Veio', 'm²'];
   const off = multi ? 1 : 0;
   w.table({
@@ -540,7 +642,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
   });
 
   // --- 4. Materiais ---------------------------------------------------------------------
-  w.section(4, 'Materiais');
+  w.section(5, 'Materiais');
   w.table({
     head: [['Material', 'Espessura', 'Peças', 'Área de peças', 'Chapas', 'Consumo real', 'Aproveitamento', 'Perda']],
     body: nesting.map((g) => {
@@ -578,7 +680,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
   }
 
   // --- 5. Plano de corte -------------------------------------------------------------------
-  w.section(5, 'Plano de corte', { newPage: true });
+  w.section(6, 'Plano de corte', { newPage: true });
   w.paragraph(
     `Chapa ${sheet.length} × ${sheet.width} mm, kerf ${sheet.kerf} mm, refilo ${sheet.trim} mm. Cortes em guilhotina (de ponta a ponta). ` +
       'Os números (#) correspondem à lista de corte; a área hachurada é sobra/retalho.' +
@@ -618,7 +720,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
   }
 
   // --- 6. Lista de compras -----------------------------------------------------------------
-  w.section(6, 'Lista de compras', { newPage: true });
+  w.section(7, 'Lista de compras', { newPage: true });
   w.table({
     head: [['Qtd', 'Un', 'Item', 'Especificação', 'Aplicação']],
     body: [
@@ -634,7 +736,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
   });
 
   // --- 7. Orçamento ------------------------------------------------------------------------
-  w.section(7, 'Orçamento', { newPage: true });
+  w.section(8, 'Orçamento', { newPage: true });
   w.paragraph('Preços de referência ou informados no app. Confirme os valores com os seus fornecedores.');
   w.table({
     head: [['Item', 'Qtd', 'Un', 'Preço unit.', 'Total']],
@@ -674,7 +776,7 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
   });
 
   // --- 8. Ferramentas ------------------------------------------------------------------------
-  w.section(8, 'Checklist de ferramentas');
+  w.section(9, 'Checklist de ferramentas');
   for (const [category, title] of [
     ['obrigatoria', 'Essenciais'],
     ['recomendada', 'Opcionais / avançadas'],

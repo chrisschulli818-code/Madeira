@@ -17,7 +17,7 @@ import type {
   ServiceSettings,
   ToolRequirement,
 } from '@/types/woodcraft';
-import { buildModel } from './cabinetEngine';
+import { buildModel, type ModelInput } from './cabinetEngine';
 import { computeHardware, consumableItems, mergeHardware } from './hardwareEngine';
 import { computeTools, mergeTools } from './toolsEngine';
 
@@ -28,7 +28,7 @@ export interface ItemResult {
 
 /** Calcula o modelo de um móvel com ids de peça únicos no projeto. */
 export function buildItemModel(item: ProjectItem): AssembledModel {
-  const model = buildModel(item.templateId === 'workbench' ? { templateId: item.templateId, params: item.params } : { templateId: item.templateId, params: item.params });
+  const model = buildModel(item as ModelInput);
   const prefix = (id: string) => `${item.id}/${id}`;
   return {
     ...model,

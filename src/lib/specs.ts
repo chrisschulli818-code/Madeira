@@ -1,11 +1,25 @@
-import type { CabinetParams, TemplateId, WorkbenchParams } from '@/types/woodcraft';
+import type { CabinetParams, CustomParams, TemplateId, WorkbenchParams } from '@/types/woodcraft';
+import { buildCustom, PANEL_KIND_LABELS } from '@/engine/customEngine';
 
 const ASSEMBLY = { screw: 'Parafuso direto', minifix: 'Minifix + cavilhas', dowel: 'Cavilhas coladas' } as const;
 const BASE = { plinth: 'Rodapé recuado', feet: 'Pés reguláveis', none: 'Suspenso / sem rodapé' } as const;
 
 /** Especificações gerais em formato "rótulo → valor" para o relatório. */
-export function describeParams(templateId: TemplateId, params: CabinetParams | WorkbenchParams): Array<[string, string]> {
-  const dims: [string, string] = ['Dimensões externas (L × A × P)', `${params.width} × ${params.height} × ${params.depth} mm`];
+export function describeParams(templateId: TemplateId, params: CabinetParams | WorkbenchParams | CustomParams): Array<[string, string]> {
+  if (templateId === 'custom') {
+    const p = params as CustomParams;
+    const { overall, joints } = buildCustom(p);
+    const byKind = new Map<string, number>();
+    for (const panel of p.panels) byKind.set(PANEL_KIND_LABELS[panel.kind], (byKind.get(PANEL_KIND_LABELS[panel.kind]) ?? 0) + 1);
+    return [
+      ['Dimensões externas (L × A × P)', `${overall.width} × ${overall.height} × ${overall.depth} mm`],
+      ['Painéis', p.panels.length ? [...byKind].map(([k, n]) => `${n} ${k.toLowerCase()}`).join(', ') : 'nenhum'],
+      ['Junções detectadas', String(joints.length)],
+      ['Montagem', ASSEMBLY[p.assembly]],
+    ];
+  }
+  const q = params as CabinetParams | WorkbenchParams;
+  const dims: [string, string] = ['Dimensões externas (L × A × P)', `${q.width} × ${q.height} × ${q.depth} mm`];
   if (templateId === 'workbench') {
     const p = params as WorkbenchParams;
     return [

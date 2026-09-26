@@ -1,5 +1,7 @@
 import type {
   CabinetParams,
+  CarcassTemplateId,
+  CustomParams,
   CabinetTemplate,
   ColumnConfig,
   TemplateId,
@@ -114,19 +116,30 @@ export const WORKBENCH: CabinetTemplate<WorkbenchParams> = {
   },
 };
 
+export const CUSTOM: CabinetTemplate<CustomParams> = {
+  id: 'custom',
+  name: 'Móvel livre (do zero)',
+  description: 'Comece com a tela em branco e monte o móvel peça por peça, com medidas e posições livres.',
+  kind: 'custom',
+  limits: { width: [0, 5000], height: [0, 3000], depth: [0, 1500] },
+  defaults: { panels: [], assembly: 'screw' },
+};
+
 export const TEMPLATES = {
   'base-cabinet': BASE_CABINET,
   'wall-cabinet': WALL_CABINET,
   wardrobe: WARDROBE,
   workbench: WORKBENCH,
+  custom: CUSTOM,
 } as const satisfies Record<TemplateId, CabinetTemplate>;
 
 export const TEMPLATE_LIST: CabinetTemplate[] = Object.values(TEMPLATES);
 
 /** Cópia profunda dos parâmetros padrão (evita mutar o template). */
 export function defaultParamsFor(id: 'workbench'): WorkbenchParams;
-export function defaultParamsFor(id: Exclude<TemplateId, 'workbench'>): CabinetParams;
-export function defaultParamsFor(id: TemplateId): CabinetParams | WorkbenchParams;
-export function defaultParamsFor(id: TemplateId): CabinetParams | WorkbenchParams {
+export function defaultParamsFor(id: 'custom'): CustomParams;
+export function defaultParamsFor(id: CarcassTemplateId): CabinetParams;
+export function defaultParamsFor(id: TemplateId): CabinetParams | WorkbenchParams | CustomParams;
+export function defaultParamsFor(id: TemplateId): CabinetParams | WorkbenchParams | CustomParams {
   return structuredClone(TEMPLATES[id].defaults);
 }

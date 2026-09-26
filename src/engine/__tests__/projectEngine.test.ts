@@ -5,6 +5,7 @@ import { computeBudget, DEFAULT_PRICES } from '../budgetEngine';
 import { defaultItemPrice, defaultSheetPrice } from '../pricing';
 import { createItem, DEFAULT_MATERIALS, DEFAULT_SERVICES, DEFAULT_SHEET, parseProjectFile, serializeProject } from '../projectFile';
 import { migrateState } from '@/store/projectStore';
+import { DEFAULT_ROOM } from '../roomEngine';
 import type { ProjectItem } from '@/types/woodcraft';
 
 const twoItems = (): ProjectItem[] => [
@@ -105,6 +106,8 @@ describe('arquivo de projeto', () => {
       materials: DEFAULT_MATERIALS,
       services: DEFAULT_SERVICES,
       prices: { ...DEFAULT_PRICES, labor: 300, itemPrices: { abc: 2.5 } },
+      room: { ...DEFAULT_ROOM, name: 'Cozinha da casa', width: 3200 },
+      placements: [{ itemId: items[0]!.id, unit: 1, x: 1200, z: 0, rotation: 0 as const, elevation: 0 }],
     };
     const parsed = parseProjectFile(serializeProject(data));
     expect(parsed.ok).toBe(true);
@@ -134,7 +137,7 @@ describe('arquivo de projeto', () => {
     const [item] = parsed.data.items;
     expect(parsed.data.items).toHaveLength(1);
     expect(item!.templateId).toBe('base-cabinet');
-    if (item!.templateId === 'workbench') return;
+    if (item!.templateId === 'workbench' || item!.templateId === 'custom') return;
     expect(item!.params.width).toBe(1200);
     expect(item!.params.height).toBe(870);
     expect(item!.params.assembly).toBe('screw');
@@ -157,7 +160,7 @@ describe('arquivo de projeto', () => {
     expect(migrated.items).toHaveLength(1);
     const item = migrated.items![0]!;
     expect(item.templateId).toBe('wall-cabinet');
-    expect(item.params.width).toBe(1000);
+    expect(item.templateId === 'wall-cabinet' && item.params.width).toBe(1000);
     expect(migrated.activeItemId).toBe(item.id);
     expect('cabinetParams' in migrated).toBe(false);
   });

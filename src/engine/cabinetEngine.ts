@@ -17,16 +17,20 @@
  */
 import type {
   AssembledModel,
+  CarcassTemplateId,
+  CustomParams,
   Box3D,
   CabinetParams,
   CutPiece,
   DoorSpec,
+  DragHandle,
   DrawerSpec,
   EdgeBanding,
   GrainDirection,
   Joint,
   MaterialRole,
   PieceRole,
+  ShelfRegion,
   TemplateId,
   WorkbenchParams,
 } from '@/types/woodcraft';
@@ -49,6 +53,7 @@ import {
   SLIDE_LENGTHS,
   SLIDE_REAR_CLEARANCE,
 } from './constants';
+import { buildCustom } from './customEngine';
 
 // ---------------------------------------------------------------------------
 // Utilidades
@@ -187,6 +192,8 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
   const doors: Omit<DoorSpec, 'pieceId'>[] = [];
   const drawers: DrawerSpec[] = [];
   const hangingRods: number[] = [];
+  const handles: DragHandle[] = [];
+  const regions: ShelfRegion[] = [];
   let adjustableShelves = 0;
 
   // --- Referências verticais --------------------------------------------------
@@ -419,6 +426,8 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
       for (let k = 0; k < nDrawers; k++) {
         const bottom = atBottom ? frontBottom + k * (fh + g) : frontTop - k * (fh + g) - fh;
         const frontW = frontSpan - g;
+        const frontBox: Box3D = { x: fx0 + g / 2, y: bottom, z: D, w: frontW, h: fh, d: Tf };
+        handles.push({ kind: 'drawer', box: frontBox, column: i, index: k });
         out.add({
           name: 'Frente de gaveta',
           role: 'drawer-front',
@@ -427,7 +436,7 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
           width: fh,
           thickness: Tf,
           edgeBanding: EDGE.all,
-          instances: [{ x: fx0 + g / 2, y: bottom, z: D, w: frontW, h: fh, d: Tf }],
+          instances: [frontBox],
         });
 
         // A caixa fica 10 mm acima do piso do vão (fundo pregado por baixo) e abaixo do teto.
@@ -521,8 +530,12 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
     const setback = nDoors > 0 ? SHELF_FRONT_SETBACK : 0;
     const shelfLen = colW - SHELF_SIDE_CLEARANCE;
     const shelfDepth = internalDepth - setback;
-    const shelfYs: number[] = [];
-    if (nShelves > 0 && regionH > T) {
+    let shelfYs: number[] = [];
+    const manual = col.shelfPositions && col.shelfPositions.length === nShelves ? col.shelfPositions : null;
+    if (nShelves > 0 && regionH > T && manual) {
+      // Posições definidas ao arrastar (limitadas à região do vão).
+      shelfYs = manual.map((o) => regionBottom + clamp(o, 0, regionH - T)).sort((a, b) => a - b);
+    } else if (nShelves > 0 && regionH > T) {
       if (col.hangingRod) {
         for (let k = 0; k < nShelves; k++) {
           const y = regionTop - ROD_SHELF_SPACING * (k + 1);
@@ -533,7 +546,16 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
         for (let k = 1; k <= nShelves; k++) shelfYs.push(regionBottom + k * spacing - T / 2);
       }
     }
+    shelfYs.sort((a, b) => a - b);
+    regions.push({
+      bottom: regionBottom,
+      top: regionTop,
+      acceptsShelves: regionH > T && !(nDrawers > 0 && nDoors === 0),
+      shelves: shelfYs.map((y) => y - regionBottom),
+    });
     if (shelfYs.length) {
+      const shelfBoxes = shelfYs.map((y): Box3D => ({ x: x0 + SHELF_SIDE_CLEARANCE / 2, y, z: internalZ0, w: shelfLen, h: T, d: shelfDepth }));
+      shelfBoxes.forEach((box, k) => handles.push({ kind: 'shelf', box, column: i, index: k }));
       out.add({
         name: 'Prateleira móvel',
         role: 'shelf',
@@ -542,7 +564,7 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
         width: shelfDepth,
         thickness: T,
         edgeBanding: EDGE.oneLong,
-        instances: shelfYs.map((y) => ({ x: x0 + SHELF_SIDE_CLEARANCE / 2, y, z: internalZ0, w: shelfLen, h: T, d: shelfDepth })),
+        instances: shelfBoxes,
         notes: label ? `Apoiada em pinos${label}` : 'Apoiada em pinos',
       });
       adjustableShelves += shelfYs.length;
@@ -574,7 +596,8 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
     backPerimeter: overlayBack ? 2 * (W + H - baseY) : 0,
     baseType: p.baseType,
     assembly: p.assembly,
-    layout: { columns: columnSpans, plinthHeight: baseY, internalDepth },
+    layout: { columns: columnSpans, plinthHeight: baseY, internalDepth, regions },
+    handles,
     warnings,
   };
 }
@@ -682,11 +705,19 @@ export function buildWorkbench(input: WorkbenchParams): AssembledModel {
 
 export type ModelInput =
   | { templateId: 'workbench'; params: WorkbenchParams }
-  | { templateId: Exclude<TemplateId, 'workbench'>; params: CabinetParams };
+  | { templateId: 'custom'; params: CustomParams }
+  | { templateId: CarcassTemplateId; params: CabinetParams };
 
 /** Monta o modelo do móvel a partir do template selecionado. */
 export function buildModel(input: ModelInput): AssembledModel {
-  return input.templateId === 'workbench' ? buildWorkbench(input.params) : buildCarcass(input.templateId, input.params);
+  switch (input.templateId) {
+    case 'workbench':
+      return buildWorkbench(input.params);
+    case 'custom':
+      return buildCustom(input.params);
+    default:
+      return buildCarcass(input.templateId, input.params);
+  }
 }
 
 // ---------------------------------------------------------------------------
