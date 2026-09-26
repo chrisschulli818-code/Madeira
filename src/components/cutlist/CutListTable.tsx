@@ -3,7 +3,7 @@
  * Exporta CSV para a madeireira e dispara a impressão do relatório.
  */
 import { useEffect, useRef } from 'react';
-import { ArrowRightLeft, Download, Printer } from 'lucide-react';
+import { ArrowRightLeft, Download, FileDown, Printer } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
 import { useResults } from '@/hooks/ProjectResults';
 import { cutListToCsv } from '@/engine/exporters';
@@ -14,6 +14,7 @@ import { MATERIAL_COLORS } from '@/lib/pieceColors';
 import { cn, downloadFile, fmt, slugify } from '@/lib/utils';
 import type { CutPiece, MaterialRole, MaterialSpec } from '@/types/woodcraft';
 import { EdgeBandIcon } from './EdgeBandIcon';
+import { useExportPdf } from '@/hooks/useExportPdf';
 
 export function CutListTotals({ pieces }: { pieces: CutPiece[] }) {
   const units = pieces.reduce((n, p) => n + p.quantity, 0);
@@ -115,6 +116,7 @@ export function CutListTable() {
   const hoverPiece = useProjectStore((s) => s.hoverPiece);
   const selectPiece = useProjectStore((s) => s.selectPiece);
   const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
+  const { exportPdf, exporting } = useExportPdf();
 
   // Peça selecionada no 3D → rola a tabela até a linha correspondente.
   useEffect(() => {
@@ -130,6 +132,9 @@ export function CutListTable() {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={exportCsv}>
             <Download /> CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={exporting}>
+            <FileDown /> PDF
           </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer /> Imprimir

@@ -1,9 +1,10 @@
-import { Archive, DoorClosed, PanelTop, Printer, Table2 } from 'lucide-react';
+import { Archive, DoorClosed, FileDown, Loader2, PanelTop, Printer, Table2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useProjectStore } from '@/store/projectStore';
 import { TEMPLATE_LIST } from '@/engine/templates';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useExportPdf } from '@/hooks/useExportPdf';
 import type { TemplateId } from '@/types/woodcraft';
 
 const TEMPLATE_ICONS: Record<TemplateId, ReactNode> = {
@@ -18,6 +19,7 @@ export function Header() {
   const setProjectName = useProjectStore((s) => s.setProjectName);
   const templateId = useProjectStore((s) => s.templateId);
   const setTemplate = useProjectStore((s) => s.setTemplate);
+  const { exportPdf, exporting } = useExportPdf();
 
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-4 py-2.5">
@@ -53,9 +55,14 @@ export function Header() {
         ))}
       </nav>
 
-      <Button size="sm" className="ml-auto sm:ml-0" onClick={() => window.print()}>
-        <Printer /> Relatório PDF
-      </Button>
+      <div className="ml-auto flex gap-2 sm:ml-0">
+        <Button variant="outline" size="sm" onClick={() => window.print()} title="Imprimir relatório">
+          <Printer /> <span className="hidden md:inline">Imprimir</span>
+        </Button>
+        <Button size="sm" onClick={exportPdf} disabled={exporting} title="Baixar o projeto completo em PDF">
+          {exporting ? <Loader2 className="animate-spin" /> : <FileDown />} Exportar PDF
+        </Button>
+      </div>
     </header>
   );
 }

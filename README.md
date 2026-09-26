@@ -8,7 +8,7 @@ A partir das medidas externas e das opções de construção, gera automaticamen
 - **Lista de compras**: parafusos, minifix/cavilhas, corrediças, dobradiças, puxadores, pinos, cantoneiras, calços, fita de borda;
 - **Checklist de ferramentas** (essenciais × opcionais), adaptado ao projeto;
 - **Visualização 3D** (Three.js) e **vistas 2D cotadas** (SVG), com destaque sincronizado entre tabela, 3D e plano de corte;
-- **Relatório imprimível / PDF** e exportação **CSV** para a madeireira.
+- **Exportação em PDF** (arquivo A4 com especificações, desenhos cotados, lista de corte numerada, portas/gavetas, materiais, plano de corte com legenda, lista de compras e checklist de ferramentas) e **CSV** para a madeireira.
 
 Templates: balcão inferior (gavetas + porta), armário aéreo, guarda-roupa modular e mesa de trabalho.
 
@@ -52,6 +52,7 @@ src/
 │   ├── toolsEngine.ts          # Ferramentas essenciais/opcionais conforme o projeto
 │   ├── exporters.ts            # CSV da lista de corte
 │   └── __tests__/              # Testes unitários dos motores
+├── export/pdfReport.ts         # Gerador do PDF (jsPDF + autotable, carregado sob demanda)
 ├── store/projectStore.ts       # Zustand: só ENTRADAS do usuário (parâmetros, chapa, materiais, serviços)
 ├── hooks/ProjectResults.tsx    # Deriva modelo → plano de corte → ferragens → ferramentas (uma vez, via contexto)
 ├── lib/                        # utilidades (cn, formatação, download, cores, especificações)
