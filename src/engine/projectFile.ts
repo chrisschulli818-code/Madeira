@@ -7,6 +7,7 @@
  */
 import type {
   CabinetParams,
+  CustomPanel,
   ColumnConfig,
   MaterialRole,
   MaterialSpec,
@@ -19,6 +20,7 @@ import type {
 } from '@/types/woodcraft';
 import { DEFAULT_PRICES } from './budgetEngine';
 import { defaultParamsFor, makeColumn, TEMPLATES } from './templates';
+import { newPanelId } from './customEngine';
 
 export const PROJECT_FILE_APP = 'woodcraft-planner';
 export const PROJECT_FILE_VERSION = 2;
@@ -56,9 +58,14 @@ export const newItemId = () => `m${Date.now().toString(36)}${(itemSeq++).toStrin
 /** Cria um novo móvel a partir de um template. */
 export function createItem(templateId: TemplateId, name?: string): ProjectItem {
   const base = { id: newItemId(), name: name ?? TEMPLATES[templateId].name, quantity: 1 };
-  return templateId === 'workbench'
-    ? { ...base, templateId, params: defaultParamsFor('workbench') }
-    : { ...base, templateId, params: defaultParamsFor(templateId) };
+  switch (templateId) {
+    case 'workbench':
+      return { ...base, templateId, params: defaultParamsFor('workbench') };
+    case 'custom':
+      return { ...base, templateId, params: defaultParamsFor('custom') };
+    default:
+      return { ...base, templateId, params: defaultParamsFor(templateId) };
+  }
 }
 
 export function serializeProject(data: ProjectData): string {
@@ -103,6 +110,33 @@ function parseColumn(raw: unknown): ColumnConfig {
   });
 }
 
+const PANEL_KINDS = ['estrutura', 'prateleira', 'fundo', 'porta', 'frente'] as const;
+const ORIENTATIONS = ['side', 'front', 'horizontal'] as const;
+const edgeCount = (v: unknown): 0 | 1 | 2 => (v === 1 || v === 2 ? v : 0);
+
+function parsePanel(raw: unknown): CustomPanel | null {
+  if (!isObj(raw)) return null;
+  const kind = PANEL_KINDS.find((k) => k === raw.kind) ?? 'estrutura';
+  const orientation = ORIENTATIONS.find((o) => o === raw.orientation) ?? 'side';
+  const edge = isObj(raw.edgeBanding) ? raw.edgeBanding : {};
+  const dim = (v: unknown, d: number) => Math.max(0, numOr(v, d));
+  return {
+    id: strOr(raw.id, newPanelId()),
+    name: strOr(raw.name, 'Painel'),
+    kind,
+    orientation,
+    width: dim(raw.width, 600),
+    height: dim(raw.height, 600),
+    depth: dim(raw.depth, 400),
+    thickness: Math.max(1, numOr(raw.thickness, 18)),
+    x: numOr(raw.x, 0),
+    y: numOr(raw.y, 0),
+    z: numOr(raw.z, 0),
+    edgeBanding: { length: edgeCount(edge.length), width: edgeCount(edge.width) },
+    grainLocked: boolOr(raw.grainLocked, kind !== 'fundo'),
+  };
+}
+
 const ENUMS: Partial<Record<keyof CabinetParams, readonly string[]>> = {
   backMode: ['overlay', 'groove'],
   baseType: ['plinth', 'feet', 'none'],
@@ -122,6 +156,18 @@ export function parseItem(raw: unknown): ProjectItem | null {
     const params = mergeKnown<WorkbenchParams>(defaultParamsFor('workbench'), raw.params);
     if (!['screw', 'minifix', 'dowel'].includes(params.assembly)) params.assembly = 'screw';
     return { ...base, templateId, params };
+  }
+  if (templateId === 'custom') {
+    const rawPanels = isObj(raw.params) && Array.isArray(raw.params.panels) ? raw.params.panels : [];
+    const assembly = isObj(raw.params) ? raw.params.assembly : undefined;
+    return {
+      ...base,
+      templateId,
+      params: {
+        panels: rawPanels.map(parsePanel).filter((p): p is CustomPanel => p !== null),
+        assembly: assembly === 'minifix' || assembly === 'dowel' ? assembly : 'screw',
+      },
+    };
   }
   const defaults = defaultParamsFor(templateId);
   const params = mergeKnown<CabinetParams>(defaults, raw.params);

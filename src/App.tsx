@@ -13,6 +13,8 @@ import { PrintReport } from '@/components/report/PrintReport';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fmtMoney } from '@/lib/utils';
+import { useProjectStore } from '@/store/projectStore';
+import { useExpandedShortcuts } from '@/hooks/useExpanded';
 
 function ResultsTabs() {
   const { pieces, nesting, hardware, tools, budget } = useResults();
@@ -68,8 +70,22 @@ function ResultsTabs() {
  * - Celular: viewport 3D primeiro, depois os parâmetros e por fim os resultados.
  */
 export default function App() {
+  useExpandedShortcuts();
+  const expanded = useProjectStore((s) => s.expanded);
+
   return (
     <ProjectResultsProvider>
+      {expanded ? (
+        // Tela expandida (limpa): só o painel de edição e o viewport, ocupando a tela toda.
+        <div className="flex h-full flex-col print:hidden lg:grid lg:grid-cols-[380px_1fr]">
+          <div className="order-2 min-h-0 overflow-y-auto lg:order-1 lg:overflow-hidden">
+            <ParameterPanel />
+          </div>
+          <div className="order-1 h-[60vh] p-2 lg:order-2 lg:h-full">
+            <Viewport />
+          </div>
+        </div>
+      ) : (
       <div className="flex min-h-full flex-col print:hidden lg:h-full">
         <Header />
         <ProjectItemsBar />
@@ -85,6 +101,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      )}
       <PrintReport />
     </ProjectResultsProvider>
   );

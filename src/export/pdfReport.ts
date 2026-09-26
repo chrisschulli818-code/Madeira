@@ -357,6 +357,11 @@ function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: nu
     for (const warning of model.warnings) w.paragraph(`• ${warning}`, 8, [146, 64, 14]);
   }
 
+  if (!model.pieces.length) {
+    w.paragraph('Este móvel ainda não tem peças.', 9);
+    return;
+  }
+
   // Desenhos: frontal + interna (ou lateral) em cima; lateral + medidas internas embaixo.
   const half = (CONTENT_W - 6) / 2;
   const hasFronts = model.pieces.some((p) => FRONT_ROLES.has(p.role));
@@ -372,8 +377,9 @@ function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: nu
     ['Largura externa', `${model.overall.width} mm`],
     ['Altura externa', `${model.overall.height} mm`],
     ['Profundidade da caixa', `${model.overall.depth} mm`],
-    ['Profundidade útil interna', `${Math.round(model.layout.internalDepth)} mm`],
+    ...(model.templateId === 'custom' ? [] : [['Profundidade útil interna', `${Math.round(model.layout.internalDepth)} mm`] as [string, string]]),
     ...(model.layout.plinthHeight > 0 ? [['Rodapé / pés', `${model.layout.plinthHeight} mm`] as [string, string]] : []),
+    ...(model.templateId === 'custom' ? [['Junções detectadas', String(model.joints.length)] as [string, string]] : []),
     ...model.layout.columns.map(([a, b], i): [string, string] => [
       model.templateId === 'workbench' ? 'Vão livre entre painéis' : `Vão ${i + 1} (largura interna)`,
       `${Math.round(b - a)} mm`,

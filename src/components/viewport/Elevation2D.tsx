@@ -90,6 +90,12 @@ export function Elevation2D({ model, view, showFronts = true, hoveredId, selecte
     return items.sort((a, b) => (view === 'front' ? a.box.z + a.box.d - (b.box.z + b.box.d) : a.box.x + a.box.w - (b.box.x + b.box.w)));
   }, [model.pieces, showFronts, view]);
 
+  if (!model.pieces.length || spanX <= 0 || H <= 0) {
+    return (
+      <div className={className ? `${className} grid place-items-center text-sm text-subtle` : undefined}>Nenhuma peça para desenhar.</div>
+    );
+  }
+
   const text = Math.max(spanX, H) / 24;
   const pad = text * 5;
   const toRect = (b: Box3D) =>

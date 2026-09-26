@@ -13,7 +13,10 @@
 // Parâmetros de projeto
 // ---------------------------------------------------------------------------
 
-export type TemplateId = 'base-cabinet' | 'wall-cabinet' | 'wardrobe' | 'workbench';
+/** Templates de móveis de caixa (laterais, base, tampo, vãos). */
+export type CarcassTemplateId = 'base-cabinet' | 'wall-cabinet' | 'wardrobe';
+/** `custom` = móvel livre, montado peça por peça a partir do zero. */
+export type TemplateId = CarcassTemplateId | 'workbench' | 'custom';
 
 /** Tipo de montagem estrutural da caixa. */
 export type AssemblyMethod = 'screw' | 'minifix' | 'dowel';
@@ -109,12 +112,52 @@ export interface WorkbenchParams {
   assembly: AssemblyMethod;
 }
 
+/** Orientação de um painel do móvel livre (qual eixo é a espessura). */
+export type PanelOrientation =
+  /** Em pé, de lado (como uma lateral): espessura no eixo X. */
+  | 'side'
+  /** Em pé, de frente (como fundo ou porta): espessura no eixo Z. */
+  | 'front'
+  /** Deitado (como base, tampo ou prateleira): espessura no eixo Y. */
+  | 'horizontal';
+
+/** Função do painel no móvel livre (define material, fita e ferragens). */
+export type CustomPanelKind = 'estrutura' | 'prateleira' | 'fundo' | 'porta' | 'frente';
+
+/** Painel do móvel livre, posicionado manualmente. */
+export interface CustomPanel {
+  id: string;
+  name: string;
+  kind: CustomPanelKind;
+  orientation: PanelOrientation;
+  /** Medida no eixo X (ignorada quando a orientação é `side`: vira a espessura). */
+  width: number;
+  /** Medida no eixo Y (ignorada quando `horizontal`). */
+  height: number;
+  /** Medida no eixo Z (ignorada quando `front`). */
+  depth: number;
+  thickness: number;
+  /** Canto inferior-esquerdo-traseiro do painel (mm). */
+  x: number;
+  y: number;
+  z: number;
+  edgeBanding: EdgeBanding;
+  /** Veio travado no comprimento (não gira no plano de corte em chapa amadeirada). */
+  grainLocked: boolean;
+}
+
+/** Parâmetros do móvel livre: uma lista de painéis posicionados à mão. */
+export interface CustomParams {
+  panels: CustomPanel[];
+  assembly: AssemblyMethod;
+}
+
 /** Descrição de um template paramétrico para a interface. */
-export interface CabinetTemplate<P = CabinetParams | WorkbenchParams> {
+export interface CabinetTemplate<P = CabinetParams | WorkbenchParams | CustomParams> {
   id: TemplateId;
   name: string;
   description: string;
-  kind: 'carcass' | 'workbench';
+  kind: 'carcass' | 'workbench' | 'custom';
   defaults: P;
   /** Limites sugeridos para sliders (mm). */
   limits: {
@@ -191,6 +234,8 @@ export interface CutPiece {
   /** Posição de cada unidade no móvel montado (quantity itens). */
   instances: Box3D[];
   notes?: string;
+  /** Móvel livre: ids dos painéis que geraram esta linha (para ligar lista, 3D e editor). */
+  sourceIds?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -360,7 +405,8 @@ interface ProjectItemBase {
 /** Um móvel do projeto: template + parâmetros próprios. */
 export type ProjectItem =
   | (ProjectItemBase & { templateId: 'workbench'; params: WorkbenchParams })
-  | (ProjectItemBase & { templateId: Exclude<TemplateId, 'workbench'>; params: CabinetParams });
+  | (ProjectItemBase & { templateId: 'custom'; params: CustomParams })
+  | (ProjectItemBase & { templateId: CarcassTemplateId; params: CabinetParams });
 
 /** Linha da lista de corte do projeto (peça de um móvel, já multiplicada pela quantidade de móveis). */
 export interface ProjectPiece extends CutPiece {

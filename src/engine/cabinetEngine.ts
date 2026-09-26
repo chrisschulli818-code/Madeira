@@ -17,6 +17,8 @@
  */
 import type {
   AssembledModel,
+  CarcassTemplateId,
+  CustomParams,
   Box3D,
   CabinetParams,
   CutPiece,
@@ -49,6 +51,7 @@ import {
   SLIDE_LENGTHS,
   SLIDE_REAR_CLEARANCE,
 } from './constants';
+import { buildCustom } from './customEngine';
 
 // ---------------------------------------------------------------------------
 // Utilidades
@@ -682,11 +685,19 @@ export function buildWorkbench(input: WorkbenchParams): AssembledModel {
 
 export type ModelInput =
   | { templateId: 'workbench'; params: WorkbenchParams }
-  | { templateId: Exclude<TemplateId, 'workbench'>; params: CabinetParams };
+  | { templateId: 'custom'; params: CustomParams }
+  | { templateId: CarcassTemplateId; params: CabinetParams };
 
 /** Monta o modelo do móvel a partir do template selecionado. */
 export function buildModel(input: ModelInput): AssembledModel {
-  return input.templateId === 'workbench' ? buildWorkbench(input.params) : buildCarcass(input.templateId, input.params);
+  switch (input.templateId) {
+    case 'workbench':
+      return buildWorkbench(input.params);
+    case 'custom':
+      return buildCustom(input.params);
+    default:
+      return buildCarcass(input.templateId, input.params);
+  }
 }
 
 // ---------------------------------------------------------------------------

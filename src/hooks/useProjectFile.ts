@@ -36,8 +36,9 @@ export function useProjectFile() {
     input.click();
   };
 
-  const newProject = () => {
-    if (confirm('Começar um projeto novo? O projeto atual será descartado (salve-o antes, se precisar).')) newProjectAction();
+  const newProject = (fromScratch = false) => {
+    const what = fromScratch ? 'um projeto do zero, com a tela em branco' : 'um projeto novo';
+    if (confirm(`Começar ${what}? O projeto atual será descartado (salve-o antes, se precisar).`)) newProjectAction(fromScratch);
   };
 
   return { saveProject, openProject, newProject };

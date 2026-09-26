@@ -65,7 +65,8 @@ function PieceMesh({
 
 export default function Scene3D({ model, showFronts, explode, hoveredId, selectedId, onHover, onSelect }: Props) {
   const { width: W, height: H, depth: D } = model.overall;
-  const size = Math.max(W, H, D) * MM;
+  // Móvel vazio (móvel livre recém-criado): usa uma cena de 1 m como referência.
+  const size = Math.max(W, H, D, 1000) * MM;
   const center: [number, number, number] = [(W / 2) * MM, (H / 2) * MM, (D / 2) * MM];
 
   const items = useMemo(

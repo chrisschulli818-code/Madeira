@@ -6,9 +6,11 @@ import { createItem, DEFAULT_MATERIALS, DEFAULT_SERVICES, DEFAULT_SHEET } from '
 import { TEMPLATES } from '@/engine/templates';
 import { describeParams } from '@/lib/specs';
 import { buildPdfReport, pdfText } from './pdfReport';
+import { createPanel } from '@/engine/customEngine';
+import type { ProjectItem } from '@/types/woodcraft';
 
-function sampleReport(itemCount: number) {
-  const items = [createItem('base-cabinet', 'Balcão pia'), createItem('wall-cabinet', 'Aéreo'), createItem('workbench')].slice(0, itemCount);
+function sampleReport(itemCount: number, extra: ProjectItem[] = []) {
+  const items = [...[createItem('base-cabinet', 'Balcão pia'), createItem('wall-cabinet', 'Aéreo'), createItem('workbench')].slice(0, itemCount), ...extra];
   const results = buildItemResults(items);
   const pieces = projectPieces(results);
   const nesting = planCutting(pieces, DEFAULT_MATERIALS, DEFAULT_SHEET);
@@ -47,6 +49,19 @@ describe('buildPdfReport', () => {
   it('inclui uma seção por móvel em projetos com vários móveis', () => {
     const content = sampleReport(3).output();
     for (const text of ['Móvel 1: Balcão pia', 'Móvel 2: Aéreo', 'Móvel 3: Mesa de trabalho']) expect(content).toContain(text);
+  });
+
+  it('aceita móvel livre, vazio ou com peças', () => {
+    const empty = createItem('custom', 'Vazio');
+    const built = createItem('custom', 'Caixa');
+    if (built.templateId === 'custom') {
+      const a = createPanel('lateral', []);
+      const b = createPanel('lateral', [a]);
+      built.params.panels = [a, b, createPanel('horizontal', [a, b])];
+    }
+    const content = sampleReport(0, [empty, built]).output();
+    expect(content).toContain('Este móvel ainda não tem peças.');
+    expect(content).toContain('Junções detectadas');
   });
 
   it('troca símbolos fora da codificação das fontes padrão', () => {

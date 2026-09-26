@@ -1,11 +1,12 @@
 /**
  * Barra com os móveis do projeto: selecionar, duplicar, remover e adicionar novos.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Archive, Copy, DoorClosed, PanelTop, Plus, Table2, Trash2 } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Archive, Copy, DoorClosed, PanelTop, PencilRuler, Plus, Table2, Trash2 } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
 import { TEMPLATE_LIST } from '@/engine/templates';
 import { Button } from '@/components/ui/button';
+import { Dropdown, MenuItem } from '@/components/ui/dropdown';
 import { cn } from '@/lib/utils';
 import type { TemplateId } from '@/types/woodcraft';
 
@@ -14,54 +15,36 @@ export const TEMPLATE_ICONS: Record<TemplateId, ReactNode> = {
   'wall-cabinet': <PanelTop />,
   wardrobe: <DoorClosed />,
   workbench: <Table2 />,
+  custom: <PencilRuler />,
 };
 
 function AddItemMenu() {
   const addItem = useProjectStore((s) => s.addItem);
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', close);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', close);
-    };
-  }, [open]);
-
   return (
-    <div ref={ref} className="relative shrink-0">
-      <Button variant="outline" size="sm" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu">
-        <Plus /> Adicionar móvel
-      </Button>
-      {open && (
-        <div role="menu" className="absolute right-0 z-30 mt-1 w-72 rounded-lg border border-border bg-surface p-1 shadow-lg sm:left-0 sm:right-auto">
-          {TEMPLATE_LIST.map((t) => (
-            <button
-              key={t.id}
-              role="menuitem"
-              type="button"
-              onClick={() => {
-                addItem(t.id);
-                setOpen(false);
-              }}
-              className="flex w-full gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-muted [&_svg]:mt-0.5 [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-primary"
-            >
-              {TEMPLATE_ICONS[t.id]}
-              <span>
-                <span className="block text-sm font-medium">{t.name}</span>
-                <span className="block text-xs text-subtle">{t.description}</span>
-              </span>
-            </button>
-          ))}
-        </div>
+    <Dropdown
+      align="right"
+      className="sm:left-auto sm:right-0"
+      trigger={({ open, toggle }) => (
+        <Button variant="outline" size="sm" onClick={toggle} aria-expanded={open} aria-haspopup="menu">
+          <Plus /> Adicionar móvel
+        </Button>
       )}
-    </div>
+    >
+      {(close) =>
+        TEMPLATE_LIST.map((t) => (
+          <MenuItem
+            key={t.id}
+            icon={TEMPLATE_ICONS[t.id]}
+            title={t.name}
+            description={t.description}
+            onSelect={() => {
+              addItem(t.id);
+              close();
+            }}
+          />
+        ))
+      }
+    </Dropdown>
   );
 }
 

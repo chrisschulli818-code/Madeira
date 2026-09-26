@@ -15,7 +15,12 @@ A partir das medidas externas e das opções de construção, gera automaticamen
 - **Orçamento** com preços de referência editáveis (chapas, ferragens, serviços da madeireira), mão de obra e margem;
 - **Salvar/abrir projetos** em arquivo `.woodcraft.json` para levar a outro computador ou compartilhar.
 
-Templates: balcão inferior, armário aéreo, guarda-roupa modular e mesa de trabalho. Em cada vão é possível
+- **Móvel livre (do zero)**: comece com a tela em branco e monte o móvel painel por painel (medidas, espessura,
+  posição, função e fita). As junções são detectadas pelo contato entre painéis de estrutura;
+- **Tela expandida**: esconde cabeçalho e abas e deixa só o editor e o 3D (botão **Expandir**, Esc para sair).
+  **Novo → Do zero** já abre o projeto em branco nesse modo.
+
+Templates: balcão inferior, armário aéreo, guarda-roupa modular, mesa de trabalho e móvel livre. Em cada vão é possível
 combinar gavetas e porta, com o gaveteiro em cima ou embaixo.
 
 ## Como rodar
@@ -60,6 +65,7 @@ src/
 │   ├── nestingEngine.ts        # Otimizador de chapas: guilhotina 2D multi-heurística
 │   ├── hardwareEngine.ts       # Quantitativo de ferragens, fixadores e fita de borda
 │   ├── toolsEngine.ts          # Ferramentas essenciais/opcionais conforme o projeto
+│   ├── customEngine.ts         # Móvel livre: painéis posicionados à mão, junções por contato
 │   ├── projectEngine.ts        # Soma vários móveis: peças, plano de corte, ferragens, ferramentas
 │   ├── budgetEngine.ts         # Orçamento (chapas, insumos, serviços, mão de obra, margem)
 │   ├── pricing.ts              # Preços de referência (R$)
