@@ -1,4 +1,4 @@
-import { ClipboardList, LayoutGrid, ListChecks, Wallet, Wrench } from 'lucide-react';
+import { ClipboardList, Drill, LayoutGrid, ListChecks, Wallet, Wrench } from 'lucide-react';
 import { ProjectResultsProvider, useResults } from '@/hooks/ProjectResults';
 import { Header } from '@/components/layout/Header';
 import { ProjectItemsBar } from '@/components/layout/ProjectItemsBar';
@@ -11,6 +11,7 @@ import { CuttingPlan } from '@/components/nesting/CuttingPlan';
 import { HardwareSummary } from '@/components/hardware/HardwareSummary';
 import { ToolChecklist } from '@/components/tools/ToolChecklist';
 import { BudgetPanel } from '@/components/budget/BudgetPanel';
+import { AssemblyPanel } from '@/components/assembly/AssemblyPanel';
 import { PrintReport } from '@/components/report/PrintReport';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -19,7 +20,7 @@ import { useProjectStore } from '@/store/projectStore';
 import { useExpandedShortcuts } from '@/hooks/useExpanded';
 
 function ResultsTabs() {
-  const { pieces, nesting, hardware, tools, budget } = useResults();
+  const { pieces, nesting, hardware, tools, budget, joinery } = useResults();
   const sheets = nesting.reduce((n, g) => n + g.sheets.length, 0);
   const essentials = tools.filter((t) => t.category === 'obrigatoria').length;
   const count = (n: number | string) => <span className="rounded bg-border/70 px-1.5 text-[10px] tabular-nums">{n}</span>;
@@ -41,6 +42,9 @@ function ResultsTabs() {
             <TabsTrigger value="budget">
               <Wallet /> Orçamento {count(fmtMoney(budget.price).replace(/,\d{2}$/, ''))}
             </TabsTrigger>
+            <TabsTrigger value="assembly">
+              <Drill /> Montagem {count(joinery.ops.length)}
+            </TabsTrigger>
             <TabsTrigger value="tools">
               <ListChecks /> Ferramentas {count(essentials)}
             </TabsTrigger>
@@ -57,6 +61,9 @@ function ResultsTabs() {
         </TabsContent>
         <TabsContent value="budget" className="min-h-0 flex-1">
           <BudgetPanel />
+        </TabsContent>
+        <TabsContent value="assembly" className="min-h-0 flex-1">
+          <AssemblyPanel />
         </TabsContent>
         <TabsContent value="tools" className="min-h-0 flex-1">
           <ToolChecklist />

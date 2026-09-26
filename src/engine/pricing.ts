@@ -24,6 +24,7 @@ export function defaultSheetPrice(thickness: number, label = ''): number {
 type Rule = [RegExp, number | ((item: HardwareItem) => number)];
 
 const RULES: Rule[] = [
+  [/^Parafuso de união/, 1.2],
   [/^Parafuso chipboard cabeça panela/, 0.08],
   [/^Parafuso chipboard/, 0.18],
   [/^Tapa-furo/, 0.05],
@@ -45,6 +46,7 @@ const RULES: Rule[] = [
   [/^Suporte para tubo/, 6],
   [/^Fita de borda (\d+)/, (i) => ({ 19: 1.2, 22: 1.5, 35: 2.8, 45: 3.5 })[Number(i.name.match(/(\d+) mm/)?.[1])] ?? 1.5],
   [/^Lixa/, 2.5],
+  [/^Parafuso de união/, 1.2],
 ];
 
 /** Preço unitário de referência de um insumo (por un, par ou metro). */

@@ -4,6 +4,8 @@ import { createItem } from '../projectFile';
 import {
   DEFAULT_ROOM,
   furnitureExtent,
+  connectorHardware,
+  moduleConnections,
   moveToWall,
   placementTransform,
   rotatePlacement,
@@ -142,5 +144,15 @@ describe('girar e encostar na parede', () => {
     const { placements } = setup([createItem('base-cabinet')]);
     const r = moveToWall({ ...placements[0]!, x: 1500, z: 1000 }, 'esquerda', room, []);
     expect(r).toMatchObject({ x: 0, rotation: 90 });
+  });
+});
+
+describe('união entre módulos', () => {
+  it('balcões lado a lado recebem 4 parafusos de união; aéreo acima não conta como vizinho', () => {
+    const { placements } = setup([createItem('base-cabinet'), createItem('base-cabinet'), createItem('wall-cabinet')]);
+    const conns = moduleConnections(placements);
+    expect(conns).toHaveLength(1);
+    expect(conns[0]!.connectors).toBe(4);
+    expect(connectorHardware(conns)[0]).toMatchObject({ quantity: 4, unit: 'un' });
   });
 });

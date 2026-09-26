@@ -507,6 +507,7 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
               { x: fx0 + g / 2 + leafW + g, hingeSide: 'right', outer: isLast },
             ];
       for (const leaf of leaves) {
+        const box: Box3D = { x: leaf.x, y: doorBottom, z: D, w: leafW, h: doorH, d: Tf };
         out.add({
           name: 'Porta',
           role: 'door',
@@ -515,9 +516,9 @@ export function buildCarcass(templateId: TemplateId, input: CabinetParams): Asse
           width: leafW,
           thickness: Tf,
           edgeBanding: EDGE.all,
-          instances: [{ x: leaf.x, y: doorBottom, z: D, w: leafW, h: doorH, d: Tf }],
+          instances: [box],
         });
-        doors.push({ width: cutMm(leafW), height: cutMm(doorH), hingeSide: leaf.hingeSide, overlay: leaf.outer ? 'full' : 'half' });
+        doors.push({ width: cutMm(leafW), height: cutMm(doorH), hingeSide: leaf.hingeSide, overlay: leaf.outer ? 'full' : 'half', box });
       }
     }
 

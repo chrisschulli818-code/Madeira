@@ -13,6 +13,7 @@
 import type {
   AssembledModel,
   FurniturePlacement,
+  HardwareItem,
   ProjectItem,
   ResolvedPlacement,
   RoomOpening,
@@ -335,4 +336,59 @@ export function moveToWall(p: ResolvedPlacement, wall: WallSide, room: RoomSetti
           ? { x: 0, z: cz - fp.d / 2 }
           : { x: room.width - fp.w, z: cz - fp.d / 2 };
   return snapPlacement(turned, target, room, others, false);
+}
+
+// ---------------------------------------------------------------------------
+// União entre módulos vizinhos
+// ---------------------------------------------------------------------------
+
+export interface ModuleConnection {
+  a: ResolvedPlacement;
+  b: ResolvedPlacement;
+  /** Parafusos de união entre os dois módulos. */
+  connectors: number;
+}
+
+/**
+ * Módulos encostados lado a lado (laterais se tocando, mesma faixa de altura) devem ser unidos
+ * entre si com parafusos de união: 4 por par (2 em cima, 2 embaixo), ou 2 em módulos baixos.
+ */
+export function moduleConnections(placements: ResolvedPlacement[]): ModuleConnection[] {
+  const out: ModuleConnection[] = [];
+  const touch = (a0: number, a1: number, b0: number, b1: number) => Math.abs(a1 - b0) <= 2 || Math.abs(b1 - a0) <= 2;
+  const eligible = placements.filter((p) => p.templateId !== 'workbench');
+  for (let i = 0; i < eligible.length; i++) {
+    for (let j = i + 1; j < eligible.length; j++) {
+      const a = eligible[i]!;
+      const b = eligible[j]!;
+      const vertical = Math.min(a.elevation + a.size.h, b.elevation + b.size.h) - Math.max(a.elevation, b.elevation);
+      if (vertical < 200) continue;
+      const sideBySide =
+        (touch(a.x, a.x + a.footprint.w, b.x, b.x + b.footprint.w) &&
+          Math.min(a.z + a.footprint.d, b.z + b.footprint.d) - Math.max(a.z, b.z) >= 100) ||
+        (touch(a.z, a.z + a.footprint.d, b.z, b.z + b.footprint.d) &&
+          Math.min(a.x + a.footprint.w, b.x + b.footprint.w) - Math.max(a.x, b.x) >= 100);
+      if (sideBySide) out.push({ a, b, connectors: vertical >= 600 ? 4 : 2 });
+    }
+  }
+  return out;
+}
+
+/** Item da lista de compras para unir os módulos do ambiente. */
+export function connectorHardware(connections: ModuleConnection[]): HardwareItem[] {
+  const qty = connections.reduce((n, c) => n + c.connectors, 0);
+  if (!qty) return [];
+  const name = 'Parafuso de união para módulos';
+  const specification = 'Conector Ø5 × 30 mm (macho e fêmea)';
+  return [
+    {
+      id: `fixacao:${name}:${specification}`,
+      category: 'fixacao',
+      name,
+      specification,
+      quantity: qty,
+      unit: 'un',
+      application: `Unir ${connections.length} par(es) de módulos vizinhos no ambiente`,
+    },
+  ];
 }

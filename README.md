@@ -29,6 +29,11 @@ A partir das medidas externas e das opções de construção, gera automaticamen
   completo (medidas, vãos, gavetas, peças) com o cômodo atualizando ao vivo. Móveis podem ser salvos em **Meus móveis**
   (biblioteca pessoal no navegador) e colocados em qualquer projeto/ambiente; também é possível importar os móveis de
   um projeto salvo. Móveis novos entram num lugar livre junto às paredes, sem sobrepor nem bloquear portas;
+- **Encaixes e montagem**: para cada móvel o app calcula onde as peças se encostam e gera o **mapa de furação** por
+  peça (parafuso com pré-furo, minifix + cavilha ou cavilhas coladas, caneco Ø35 e base das dobradiças, pinos de
+  prateleira a 37 mm, rasgo do fundo), com cotas u/v a partir do canto de referência, desenho da peça e marcadores no
+  3D (chave **Encaixes**), além do **passo a passo de montagem**. No ambiente, módulos vizinhos recebem parafusos de
+  união. Tudo vai para o PDF;
 - **Tela expandida**: esconde cabeçalho e abas e deixa só o editor e o 3D (botão **Expandir**, Esc para sair).
   **Novo → Do zero** já abre o projeto em branco nesse modo.
 
@@ -79,6 +84,7 @@ src/
 │   ├── toolsEngine.ts          # Ferramentas essenciais/opcionais conforme o projeto
 │   ├── customEngine.ts         # Móvel livre: painéis posicionados à mão, junções por contato, gavetas
 │   ├── roomEngine.ts           # Ambiente: posições automáticas, encaixe nas paredes/vizinhos, avisos
+│   ├── joineryEngine.ts        # Encaixes: furação por peça (u/v), dobradiças, pinos, rasgo, passo a passo
 │   ├── dragEngine.ts           # Arrastar e encaixar (sistema 32, ímã entre faces, ajuste ao vão)
 │   ├── projectEngine.ts        # Soma vários móveis: peças, plano de corte, ferragens, ferramentas
 │   ├── budgetEngine.ts         # Orçamento (chapas, insumos, serviços, mão de obra, margem)

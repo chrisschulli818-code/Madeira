@@ -8,7 +8,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { Edges, Grid, OrbitControls } from '@react-three/drei';
-import type { AssembledModel, Box3D, CutPiece } from '@/types/woodcraft';
+import type { AssembledModel, Box3D, CutPiece, MachiningOp } from '@/types/woodcraft';
+import { MACHINING_COLORS } from '@/engine/joineryEngine';
 import { HIGHLIGHT_COLOR, MATERIAL_COLORS, SELECT_COLOR } from '@/lib/pieceColors';
 import type { PieceDrag } from '@/hooks/useDragPieces';
 
@@ -25,6 +26,8 @@ interface Props {
   onHover: (id: string | null) => void;
   onSelect: (id: string | null) => void;
   drag?: PieceDrag;
+  /** Furos/encaixes para mostrar sobre as peças (só com a vista montada). */
+  markers?: MachiningOp[];
 }
 
 type Vec3 = [number, number, number];
@@ -67,6 +70,27 @@ function DragTracker({ planeZ, center, drag, onDone }: { planeZ: number; center:
     // A sessão de arraste é única: dependências fixas durante o arraste.
   }, []);
   return null;
+}
+
+/** Marcadores dos furos: cilindros na posição e direção da broca. */
+function DrillMarkers({ ops }: { ops: MachiningOp[] }) {
+  return (
+    <>
+      {ops
+        .filter((o) => o.kind !== 'rasgo')
+        .map((o, i) => {
+          const r = Math.max(o.diameter / 2, 3) * MM;
+          const len = Math.min(Math.max(o.depth, 6), 24) * MM;
+          const rotation: [number, number, number] = o.axis === 'x' ? [0, 0, Math.PI / 2] : o.axis === 'z' ? [Math.PI / 2, 0, 0] : [0, 0, 0];
+          return (
+            <mesh key={i} position={[o.world.x * MM, o.world.y * MM, o.world.z * MM]} rotation={rotation} raycast={() => null} renderOrder={2}>
+              <cylinderGeometry args={[r, r, len, 16]} />
+              <meshBasicMaterial color={MACHINING_COLORS[o.kind]} depthTest={false} transparent opacity={0.9} />
+            </mesh>
+          );
+        })}
+    </>
+  );
 }
 
 function PieceMesh({
@@ -132,7 +156,7 @@ function PieceMesh({
   );
 }
 
-export default function Scene3D({ model, showFronts, explode, hoveredId, selectedId, onHover, onSelect, drag }: Props) {
+export default function Scene3D({ model, showFronts, explode, hoveredId, selectedId, onHover, onSelect, drag, markers }: Props) {
   const { width: W, height: H, depth: D } = model.overall;
   // Durante o arraste a cena fica "congelada" (o móvel pode crescer sem deslocar a vista).
   const [frozen, setFrozen] = useState<{ size: number; center: Vec3; planeZ: number } | null>(null);
@@ -146,6 +170,9 @@ export default function Scene3D({ model, showFronts, explode, hoveredId, selecte
   // Móvel vazio (móvel livre recém-criado): usa uma cena de 1 m como referência.
   const size = frozen?.size ?? Math.max(W, H, D, 1000) * MM;
   const center: Vec3 = frozen?.center ?? [(W / 2) * MM, (H / 2) * MM, (D / 2) * MM];
+
+  // Furos só das peças visíveis (sem as frentes, os canecos das portas não aparecem).
+  const visibleIds = new Set(model.pieces.filter((p) => showFronts || !FRONT_ROLES.has(p.role)).map((p) => p.id));
 
   const startDrag = (box: Box3D, point: THREE.Vector3) => {
     if (!drag || !drag.start(box, toMm(point, center))) return;
@@ -196,6 +223,7 @@ export default function Scene3D({ model, showFronts, explode, hoveredId, selecte
             onGrabHover={setOverGrab}
           />
         ))}
+        {markers && explode === 0 && <DrillMarkers ops={markers.filter((o) => visibleIds.has(o.pieceId))} />}
       </group>
       {frozen && drag && <DragTracker
           planeZ={frozen.planeZ}

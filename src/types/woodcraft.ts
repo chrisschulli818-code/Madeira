@@ -261,6 +261,8 @@ export interface DoorSpec {
   hingeSide: 'left' | 'right';
   /** full = porta sobre lateral externa (dobradiça reta); half = sobre divisória (curva). */
   overlay: HingeOverlay;
+  /** Instância 3D da folha (mesma referência de `CutPiece.instances`), para furação das dobradiças. */
+  box?: Box3D;
 }
 
 export interface DrawerSpec {
@@ -578,4 +580,55 @@ export interface LibraryEntry {
   id: string;
   savedAt: string;
   item: ProjectItem;
+}
+
+// ---------------------------------------------------------------------------
+// Encaixes, furação e montagem
+// ---------------------------------------------------------------------------
+
+export type MachiningKind =
+  | 'parafuso'
+  | 'prefuro'
+  | 'minifix-tambor'
+  | 'minifix-pino'
+  | 'minifix-furo-borda'
+  | 'cavilha'
+  | 'pino-prateleira'
+  | 'caneco-dobradica'
+  | 'base-dobradica'
+  | 'rasgo';
+
+/** Superfície da peça onde a operação é feita. Face A = lado de menor coordenada no móvel; face B = oposto. */
+export type MachiningSurface = 'face-a' | 'face-b' | 'borda';
+
+/** Uma furação/usinagem numa peça. */
+export interface MachiningOp {
+  kind: MachiningKind;
+  pieceId: string;
+  /** Índice da unidade da peça (0 = a, 1 = b...). */
+  instance: number;
+  surface: MachiningSurface;
+  /** Posição na peça (mm): u ao longo do comprimento, v ao longo da largura, a partir do canto de referência. */
+  u: number;
+  v: number;
+  diameter: number;
+  depth: number;
+  /** Rasgo: extensão ao longo do comprimento (u) — ou da largura, se `alongWidth`. */
+  length?: number;
+  alongWidth?: boolean;
+  /** Posição no móvel (mm) e eixo da broca, para mostrar no 3D. */
+  world: { x: number; y: number; z: number };
+  axis: 'x' | 'y' | 'z';
+  /** Junção ou ferragem a que pertence (ex.: "Base × Lateral"). */
+  joint: string;
+}
+
+export interface AssemblyStep {
+  title: string;
+  detail: string;
+}
+
+export interface JoineryPlan {
+  ops: MachiningOp[];
+  steps: AssemblyStep[];
 }

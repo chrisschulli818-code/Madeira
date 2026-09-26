@@ -44,7 +44,7 @@ describe('buildPdfReport', () => {
     expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(6);
     const content = doc.output();
     expect(content.startsWith('%PDF-')).toBe(true);
-    for (const text of ['Ambiente: Cozinha', 'Parede', 'Resumo do projeto', 'Lista de corte', 'Plano de corte', 'Lista de compras', 'Orçamento', 'Checklist de ferramentas', 'Lateral', 'Corredi']) {
+    for (const text of ['Montagem passo a passo', 'Mapa de furação', 'Ambiente: Cozinha', 'Parede', 'Resumo do projeto', 'Lista de corte', 'Plano de corte', 'Lista de compras', 'Orçamento', 'Checklist de ferramentas', 'Lateral', 'Corredi']) {
       expect(content).toContain(text);
     }
   });
