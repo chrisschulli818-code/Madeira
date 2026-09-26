@@ -33,6 +33,10 @@ O arquivo `render.yaml` já configura um **Static Site** gratuito:
 
 Cada push na `main` gera um novo deploy automaticamente.
 
+> Não use `yarn start` no Render: ele abre o servidor de desenvolvimento, que estoura a memória do plano gratuito.
+> Se preferir um **Web Service** em vez de Static Site, configure:
+> **Build Command** `yarn install && yarn build` · **Start Command** `yarn serve`.
+
 ## Stack
 
 React 19 + TypeScript + Vite · Tailwind CSS v4 · componentes no estilo shadcn/ui sobre Radix UI ·
