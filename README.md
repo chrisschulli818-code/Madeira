@@ -23,6 +23,16 @@ yarn build         # typecheck + build de produção
 
 Com npm: `npm install` e `npm start`.
 
+## Publicar no Render
+
+O arquivo `render.yaml` já configura um **Static Site** gratuito:
+
+1. Em [dashboard.render.com](https://dashboard.render.com) → **New → Blueprint**.
+2. Conecte o GitHub e escolha o repositório `Madeira` (branch `main`).
+3. Confirme em **Apply**. O Render roda `npm ci && npm run build` e publica a pasta `dist`.
+
+Cada push na `main` gera um novo deploy automaticamente.
+
 ## Stack
 
 React 19 + TypeScript + Vite · Tailwind CSS v4 · componentes no estilo shadcn/ui sobre Radix UI ·
