@@ -39,6 +39,24 @@ describe('posições automáticas', () => {
     expect(turned[0]).toMatchObject({ x: 0, wall: 'esquerda' });
     expect(roomWarnings(placements, room).filter((w) => w.includes('sobrepostos'))).toHaveLength(0);
   });
+
+
+  it('móvel novo vai para um lugar livre, sem cair em cima dos que o usuário já posicionou', () => {
+    const a = createItem('base-cabinet');
+    const b = createItem('base-cabinet');
+    const results = buildItemResults([a, b]);
+    // O primeiro foi arrastado para o canto esquerdo do fundo; o segundo é novo.
+    const placements = resolvePlacements(results, room, [{ itemId: a.id, unit: 0, x: 0, z: 0, rotation: 0, elevation: 0 }]);
+    expect(placements[1]!.x).toBeGreaterThanOrEqual(placements[0]!.footprint.w);
+    expect(roomWarnings(placements, room)).toHaveLength(0);
+  });
+
+  it('não coloca móvel na frente da porta', () => {
+    const r: RoomSettings = { ...room, openings: [{ id: 'p', kind: 'porta', wall: 'fundo', offset: 0, width: 800, height: 2100, sill: 0 }] };
+    const { placements } = setup([createItem('base-cabinet')], r);
+    expect(placements[0]!.x).toBeGreaterThanOrEqual(800);
+    expect(roomWarnings(placements, r)).toHaveLength(0);
+  });
 });
 
 describe('encaixe ao arrastar', () => {
@@ -91,7 +109,9 @@ describe('encaixe ao arrastar', () => {
 describe('avisos e transformação', () => {
   it('porta bloqueada e sobreposição', () => {
     const r: RoomSettings = { ...room, openings: [{ id: 'p', kind: 'porta', wall: 'fundo', offset: 0, width: 800, height: 2100, sill: 0 }] };
-    const { placements } = setup([createItem('base-cabinet')], r);
+    const item = createItem('base-cabinet');
+    // Usuário arrastou o balcão para a frente da porta
+    const placements = resolvePlacements(buildItemResults([item]), r, [{ itemId: item.id, unit: 0, x: 0, z: 0, rotation: 0, elevation: 0 }]);
     const w = roomWarnings(placements, r);
     expect(w.some((x) => x.includes('bloqueia a abertura da porta'))).toBe(true);
     const dup = [placements[0]!, { ...placements[0]!, key: 'x', name: 'Cópia' }];

@@ -25,6 +25,10 @@ A partir das medidas externas e das opções de construção, gera automaticamen
   projeto na **planta** ou no **3D**. Ao arrastar, o móvel encosta e gira de costas para a parede mais próxima, encaixa
   nos cantos, alinha lado a lado com os vizinhos e não se sobrepõe (aéreos passam por cima dos balcões). Há botões para
   girar e encostar numa parede, e avisos de porta bloqueada, móvel sobreposto ou fora do cômodo. O PDF traz a planta;
+- **Editar dentro do ambiente e "Meus móveis"**: clicando num móvel no ambiente, o painel mostra a posição e o editor
+  completo (medidas, vãos, gavetas, peças) com o cômodo atualizando ao vivo. Móveis podem ser salvos em **Meus móveis**
+  (biblioteca pessoal no navegador) e colocados em qualquer projeto/ambiente; também é possível importar os móveis de
+  um projeto salvo. Móveis novos entram num lugar livre junto às paredes, sem sobrepor nem bloquear portas;
 - **Tela expandida**: esconde cabeçalho e abas e deixa só o editor e o 3D (botão **Expandir**, Esc para sair).
   **Novo → Do zero** já abre o projeto em branco nesse modo.
 

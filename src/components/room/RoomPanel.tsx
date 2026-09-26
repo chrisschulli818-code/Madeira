@@ -1,15 +1,20 @@
 /**
- * Painel lateral do modo Ambiente: medidas do cômodo, portas/janelas e lista de móveis
- * (girar, encostar numa parede, posição, altura do piso, editar o móvel).
+ * Painel lateral do modo Ambiente.
+ * - "Cômodo e móveis": lista de móveis, colocar móveis (Meus móveis ou modelos), medidas, portas e janelas.
+ * - "Móvel": o móvel selecionado — posição no cômodo e editor completo (medidas, vãos, peças), sem sair do ambiente.
  */
-import { DoorOpen, Home, LayoutGrid, Pencil, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { Copy, DoorOpen, Home, LayoutGrid, Move, Pencil, Plus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
 import { useResults } from '@/hooks/ProjectResults';
 import { moveToWall, rotatePlacement, snapPlacement, WALL_LABELS } from '@/engine/roomEngine';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ResolvedPlacement, WallSide } from '@/types/woodcraft';
-import { FieldRow, NumberInput, Section, SliderField } from '@/components/params/fields';
+import { FieldRow, NumberInput, Section, Segmented, SliderField } from '@/components/params/fields';
+import { ItemEditorForms, ItemEditorHeader } from '@/components/params/ParameterPanel';
+import { MyFurniture } from '@/components/library/MyFurniture';
+import { TEMPLATE_ICONS } from '@/components/layout/ProjectItemsBar';
+import { TEMPLATE_LIST } from '@/engine/templates';
 import { FURNITURE_COLORS } from './roomColors';
 
 const WALLS: WallSide[] = ['fundo', 'esquerda', 'direita', 'frente'];
@@ -77,86 +82,102 @@ function OpeningsEditor() {
   );
 }
 
-function PlacementCard({ p, all }: { p: ResolvedPlacement; all: ResolvedPlacement[] }) {
+/** Controles de posição do móvel selecionado: girar, encostar na parede, X/Z e altura do piso. */
+function PlacementControls({ p, all }: { p: ResolvedPlacement; all: ResolvedPlacement[] }) {
   const room = useProjectStore((s) => s.room);
-  const selected = useProjectStore((s) => s.selectedPlacement === p.key);
-  const selectPlacement = useProjectStore((s) => s.selectPlacement);
   const setPlacement = useProjectStore((s) => s.setPlacement);
-  const setActiveItem = useProjectStore((s) => s.setActiveItem);
-  const setViewMode = useProjectStore((s) => s.setViewMode);
   const others = all.filter((o) => o.key !== p.key);
   const save = (r: { x: number; z: number; rotation: ResolvedPlacement['rotation'] }, elevation = p.elevation) =>
     setPlacement({ itemId: p.itemId, unit: p.unit, elevation, ...r });
 
   return (
-    <div
-      onClick={() => selectPlacement(p.key)}
-      className={cn('rounded-lg border bg-background', selected ? 'border-accent ring-1 ring-accent' : 'cursor-pointer border-border hover:border-primary/40')}
-    >
-      <div className="flex items-center gap-2 px-2.5 py-2">
-        <span className="size-3 shrink-0 rounded-sm border border-black/10" style={{ background: FURNITURE_COLORS[p.templateId] }} />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p.name}</span>
-        <span className="shrink-0 text-[11px] text-subtle">{p.wall ? WALL_SHORT[p.wall] : 'solto'}</span>
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" size="sm" className="flex-1" onClick={() => save(rotatePlacement(p, room, others, -1))}>
+          <RotateCcw /> Girar
+        </Button>
+        <Button variant="outline" size="sm" className="flex-1" onClick={() => save(rotatePlacement(p, room, others, 1))}>
+          <RotateCw /> Girar
+        </Button>
       </div>
-      {selected && (
-        <div className="space-y-2.5 border-t border-border px-2.5 pb-3 pt-2.5" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" className="flex-1" onClick={() => save(rotatePlacement(p, room, others, -1))}>
-              <RotateCcw /> Girar
+      <div className="space-y-1">
+        <span className="text-xs font-medium text-subtle">Encostar na parede</span>
+        <div className="grid grid-cols-4 gap-1">
+          {WALLS.map((w) => (
+            <Button key={w} variant={p.wall === w ? 'default' : 'outline'} size="sm" className="px-1 text-[11px]" onClick={() => save(moveToWall(p, w, room, others))}>
+              {WALL_SHORT[w]}
             </Button>
-            <Button variant="outline" size="sm" className="flex-1" onClick={() => save(rotatePlacement(p, room, others, 1))}>
-              <RotateCw /> Girar
-            </Button>
-          </div>
-          <div className="space-y-1">
-            <span className="text-xs font-medium text-subtle">Encostar na parede</span>
-            <div className="grid grid-cols-4 gap-1">
-              {WALLS.map((w) => (
-                <Button key={w} variant={p.wall === w ? 'default' : 'outline'} size="sm" className="px-1 text-[11px]" onClick={() => save(moveToWall(p, w, room, others))}>
-                  {WALL_SHORT[w]}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <label className="space-y-0.5">
-              <span className="block text-[11px] text-subtle">X</span>
-              <NumberInput value={p.x} min={-20000} max={20000} onChange={(x) => save(snapPlacement(p, { x, z: p.z }, room, others, false))} />
-            </label>
-            <label className="space-y-0.5">
-              <span className="block text-[11px] text-subtle">Z</span>
-              <NumberInput value={p.z} min={-20000} max={20000} onChange={(z) => save(snapPlacement(p, { x: p.x, z }, room, others, false))} />
-            </label>
-            <label className="space-y-0.5">
-              <span className="block text-[11px] text-subtle">Do piso</span>
-              <NumberInput value={p.elevation} min={0} max={3000} onChange={(elevation) => save({ x: p.x, z: p.z, rotation: p.rotation }, elevation)} />
-            </label>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full"
-            onClick={() => {
-              setActiveItem(p.itemId);
-              setViewMode('furniture');
-            }}
-          >
-            <Pencil /> Editar este móvel
-          </Button>
+          ))}
         </div>
-      )}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <label className="space-y-0.5">
+          <span className="block text-[11px] text-subtle">X</span>
+          <NumberInput value={p.x} min={-20000} max={20000} onChange={(x) => save(snapPlacement(p, { x, z: p.z }, room, others, false))} />
+        </label>
+        <label className="space-y-0.5">
+          <span className="block text-[11px] text-subtle">Z</span>
+          <NumberInput value={p.z} min={-20000} max={20000} onChange={(z) => save(snapPlacement(p, { x: p.x, z }, room, others, false))} />
+        </label>
+        <label className="space-y-0.5">
+          <span className="block text-[11px] text-subtle">Do piso</span>
+          <NumberInput value={p.elevation} min={0} max={3000} onChange={(elevation) => save({ x: p.x, z: p.z, rotation: p.rotation }, elevation)} />
+        </label>
+      </div>
     </div>
   );
 }
 
-export function RoomPanel() {
+/** Aba "Móvel": posição no cômodo + editor completo do móvel, sem sair do ambiente. */
+function SelectedFurniture({ p, all }: { p: ResolvedPlacement; all: ResolvedPlacement[] }) {
+  const duplicateItem = useProjectStore((s) => s.duplicateItem);
+  const removeItem = useProjectStore((s) => s.removeItem);
+  const itemCount = useProjectStore((s) => s.items.length);
+  const setViewMode = useProjectStore((s) => s.setViewMode);
+  const selectPlacement = useProjectStore((s) => s.selectPlacement);
+
+  return (
+    <>
+      <ItemEditorHeader />
+      <Section title="Posição no cômodo" icon={<Move />} mobileOpen>
+        <PlacementControls p={p} all={all} />
+        <div className="grid grid-cols-3 gap-1.5">
+          <Button variant="ghost" size="sm" onClick={() => duplicateItem(p.itemId)} title="Duplicar este móvel">
+            <Copy /> Duplicar
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setViewMode('furniture')} title="Abrir no editor com vista frontal e arraste de peças">
+            <Pencil /> Editor
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hover:text-danger"
+            disabled={itemCount <= 1}
+            onClick={() => {
+              if (!confirm(`Remover "${p.name}" do projeto?`)) return;
+              selectPlacement(null);
+              removeItem(p.itemId);
+            }}
+          >
+            <Trash2 /> Remover
+          </Button>
+        </div>
+      </Section>
+      <ItemEditorForms />
+    </>
+  );
+}
+
+function RoomSettingsTab() {
   const room = useProjectStore((s) => s.room);
   const setRoom = useProjectStore((s) => s.setRoom);
   const resetPlacements = useProjectStore((s) => s.resetPlacements);
+  const selectPlacement = useProjectStore((s) => s.selectPlacement);
+  const addItem = useProjectStore((s) => s.addItem);
   const { placements } = useResults();
 
   return (
-    <aside className="flex flex-col border-b border-border bg-surface lg:h-full lg:overflow-hidden lg:border-b-0 lg:border-r">
+    <>
       <div className="flex items-start gap-3 border-b border-border px-4 py-3">
         <Home className="mt-1 size-5 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
@@ -166,31 +187,83 @@ export function RoomPanel() {
             aria-label="Nome do ambiente"
             className="w-full rounded border border-transparent bg-transparent px-1 text-sm font-semibold hover:border-border focus:border-primary focus:outline-none"
           />
-          <p className="px-1 text-xs leading-snug text-subtle">Posicione os móveis do projeto no cômodo. As medidas são internas (de parede a parede).</p>
+          <p className="px-1 text-xs leading-snug text-subtle">Clique num móvel (na lista, na planta ou no 3D) para posicioná-lo e editar suas medidas aqui mesmo.</p>
         </div>
       </div>
-      <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        <Section title={`Móveis no ambiente (${placements.length})`} icon={<LayoutGrid />} mobileOpen>
-          <div className="space-y-2">
-            {placements.map((p) => (
-              <PlacementCard key={p.key} p={p} all={placements} />
+      <Section title={`Móveis no ambiente (${placements.length})`} icon={<LayoutGrid />} mobileOpen>
+        <div className="space-y-1.5">
+          {placements.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => selectPlacement(p.key)}
+              className="flex w-full items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-2 text-left hover:border-primary/40"
+            >
+              <span className="size-3 shrink-0 rounded-sm border border-black/10" style={{ background: FURNITURE_COLORS[p.templateId] }} />
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p.name}</span>
+              <span className="shrink-0 text-[11px] text-subtle">{p.wall ? WALL_SHORT[p.wall] : 'solto'}</span>
+              <Pencil className="size-3.5 shrink-0 text-subtle" />
+            </button>
+          ))}
+        </div>
+        <FieldRow label="Organização automática">
+          <Button variant="ghost" size="sm" onClick={() => confirm('Voltar todos os móveis para a posição automática?') && resetPlacements()}>
+            Reorganizar
+          </Button>
+        </FieldRow>
+      </Section>
+      <Section title="Colocar móveis no ambiente" icon={<Plus />} mobileOpen>
+        <div className="space-y-1">
+          <span className="text-xs font-semibold text-subtle">Meus móveis</span>
+          <MyFurniture />
+        </div>
+        <div className="space-y-1">
+          <span className="text-xs font-semibold text-subtle">Novo a partir de modelo</span>
+          <div className="grid grid-cols-2 gap-1.5">
+            {TEMPLATE_LIST.map((t) => (
+              <Button key={t.id} variant="outline" size="sm" className="justify-start [&_svg]:text-primary" onClick={() => addItem(t.id)} title={t.description}>
+                {TEMPLATE_ICONS[t.id]}
+                <span className="truncate">{t.name}</span>
+              </Button>
             ))}
           </div>
-          <FieldRow label="Organização automática">
-            <Button variant="ghost" size="sm" onClick={() => confirm('Voltar todos os móveis para a posição automática?') && resetPlacements()}>
-              Reorganizar
-            </Button>
-          </FieldRow>
-          <p className="text-[11px] leading-snug text-subtle">Para adicionar móveis, use “Adicionar móvel” na barra de móveis; eles entram no ambiente automaticamente.</p>
-        </Section>
-        <Section title="Medidas do cômodo" icon={<Home />} mobileOpen>
-          <SliderField label="Largura (parede do fundo)" value={room.width} min={1000} max={12000} step={50} onChange={(width) => setRoom({ width })} />
-          <SliderField label="Profundidade (paredes laterais)" value={room.depth} min={1000} max={12000} step={50} onChange={(depth) => setRoom({ depth })} />
-          <SliderField label="Pé-direito" value={room.height} min={2000} max={4000} step={10} onChange={(height) => setRoom({ height })} />
-        </Section>
-        <Section title={`Portas e janelas (${room.openings.length})`} icon={<DoorOpen />}>
-          <OpeningsEditor />
-        </Section>
+        </div>
+        <p className="text-[11px] leading-snug text-subtle">O móvel novo vai para um lugar livre junto às paredes e já fica selecionado para você ajustar.</p>
+      </Section>
+      <Section title="Medidas do cômodo" icon={<Home />} defaultOpen={false}>
+        <SliderField label="Largura (parede do fundo)" value={room.width} min={1000} max={12000} step={50} onChange={(width) => setRoom({ width })} />
+        <SliderField label="Profundidade (paredes laterais)" value={room.depth} min={1000} max={12000} step={50} onChange={(depth) => setRoom({ depth })} />
+        <SliderField label="Pé-direito" value={room.height} min={2000} max={4000} step={10} onChange={(height) => setRoom({ height })} />
+      </Section>
+      <Section title={`Portas e janelas (${room.openings.length})`} icon={<DoorOpen />} defaultOpen={false}>
+        <OpeningsEditor />
+      </Section>
+    </>
+  );
+}
+
+export function RoomPanel() {
+  const selected = useProjectStore((s) => s.selectedPlacement);
+  const selectPlacement = useProjectStore((s) => s.selectPlacement);
+  const { placements } = useResults();
+  const current = placements.find((p) => p.key === selected);
+
+  return (
+    <aside className="flex flex-col border-b border-border bg-surface lg:h-full lg:overflow-hidden lg:border-b-0 lg:border-r">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <Segmented
+          aria-label="Painel do ambiente"
+          className="flex-1"
+          value={current ? 'movel' : 'comodo'}
+          onChange={(v) => (v === 'comodo' ? selectPlacement(null) : !current && placements[0] && selectPlacement(placements[0].key))}
+          options={[
+            { value: 'comodo', label: 'Cômodo e móveis' },
+            { value: 'movel', label: current ? `Móvel: ${current.name}` : 'Móvel selecionado' },
+          ]}
+        />
+      </div>
+      <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+        {current ? <SelectedFurniture key={current.key} p={current} all={placements} /> : <RoomSettingsTab />}
       </div>
     </aside>
   );

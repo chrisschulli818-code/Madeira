@@ -572,3 +572,10 @@ export interface ResolvedPlacement extends FurniturePlacement {
   /** Posição definida automaticamente (ainda não arrastada). */
   auto: boolean;
 }
+
+/** Móvel salvo na biblioteca pessoal ("Meus móveis"), reutilizável em qualquer projeto/ambiente. */
+export interface LibraryEntry {
+  id: string;
+  savedAt: string;
+  item: ProjectItem;
+}
