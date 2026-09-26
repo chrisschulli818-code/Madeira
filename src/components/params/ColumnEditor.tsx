@@ -14,7 +14,7 @@ export function ColumnEditor({ params, showRod }: { params: CabinetParams; showR
   return (
     <div className="space-y-3">
       <p className="text-[11px] leading-snug text-subtle">
-        Cada vão é separado por uma divisória. Gavetas ficam no topo do vão; com porta junto, uma prateleira fixa separa as duas regiões.
+        Cada vão é separado por uma divisória. Com gavetas e porta no mesmo vão, uma prateleira fixa separa as duas regiões — escolha se o gaveteiro fica em cima ou embaixo.
       </p>
       {params.columns.map((col, i) => (
         <div key={col.id} className="space-y-2.5 rounded-lg border border-border bg-background p-3">
@@ -48,6 +48,19 @@ export function ColumnEditor({ params, showRod }: { params: CabinetParams; showR
           <FieldRow label="Gavetas">
             <Stepper value={col.drawers} max={6} onChange={(v) => updateColumn(col.id, { drawers: v })} aria-label="Gavetas" />
           </FieldRow>
+          {col.drawers > 0 && col.doors > 0 && (
+            <FieldRow label="Posição das gavetas">
+              <Segmented
+                aria-label="Posição das gavetas"
+                value={col.drawerPosition ?? 'top'}
+                onChange={(drawerPosition) => updateColumn(col.id, { drawerPosition })}
+                options={[
+                  { value: 'top', label: 'Em cima' },
+                  { value: 'bottom', label: 'Embaixo' },
+                ]}
+              />
+            </FieldRow>
+          )}
           <FieldRow label="Portas">
             <Segmented
               aria-label="Portas"

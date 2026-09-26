@@ -11,22 +11,26 @@ import { slugify } from '@/lib/utils';
  */
 export function useExportPdf() {
   const results = useResults();
+  const projectName = useProjectStore((s) => s.projectName);
   const [exporting, setExporting] = useState(false);
 
   const exportPdf = async () => {
     setExporting(true);
     try {
       const { buildPdfReport } = await import('@/export/pdfReport');
-      const s = useProjectStore.getState();
-      const params = s.templateId === 'workbench' ? s.workbenchParams : s.cabinetParams[s.templateId];
       const doc = buildPdfReport({
         ...results,
-        projectName: s.projectName || 'Projeto',
-        templateName: TEMPLATES[s.templateId].name,
+        projectName: projectName || 'Projeto',
         date: new Date(),
-        specs: describeParams(s.templateId, params),
+        items: results.items.map(({ item, model }) => ({
+          name: item.name,
+          templateName: TEMPLATES[item.templateId].name,
+          quantity: item.quantity,
+          specs: describeParams(item.templateId, item.params),
+          model,
+        })),
       });
-      doc.save(`${slugify(s.projectName)}-projeto.pdf`);
+      doc.save(`${slugify(projectName)}-projeto.pdf`);
     } catch (err) {
       console.error(err);
       alert('Não foi possível gerar o PDF. Tente novamente.');

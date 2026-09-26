@@ -1,9 +1,10 @@
 /**
  * Estado global do projeto (Zustand).
  *
- * Guarda apenas as ENTRADAS do usuário (template, parâmetros, chapa, materiais, serviços).
- * Tudo que é derivado (peças, plano de corte, ferragens, ferramentas) é recalculado
- * pelos motores puros em `useProjectResults`, garantindo uma única fonte de verdade.
+ * Guarda apenas as ENTRADAS do usuário: móveis do projeto (template + parâmetros),
+ * chapa, materiais, serviços e preços. Tudo que é derivado (peças, plano de corte,
+ * insumos, ferramentas, orçamento) é recalculado pelos motores puros em
+ * `ProjectResultsProvider`, garantindo uma única fonte de verdade.
  * O estado persiste no localStorage.
  */
 import { create } from 'zustand';
@@ -13,27 +14,30 @@ import type {
   ColumnConfig,
   MaterialRole,
   MaterialSpec,
+  PriceSettings,
+  ProjectItem,
+  ServiceSettings,
   SheetSettings,
   TemplateId,
   WorkbenchParams,
 } from '@/types/woodcraft';
-import { defaultParamsFor, makeColumn } from '@/engine/templates';
+import { defaultParamsFor, makeColumn, TEMPLATES } from '@/engine/templates';
+import { DEFAULT_PRICES } from '@/engine/budgetEngine';
+import {
+  createItem,
+  DEFAULT_MATERIALS,
+  DEFAULT_SERVICES,
+  DEFAULT_SHEET,
+  newItemId,
+  parseItem,
+  type ProjectData,
+} from '@/engine/projectFile';
 
+export { DEFAULT_MATERIALS, DEFAULT_SHEET };
 export type CarcassTemplateId = Exclude<TemplateId, 'workbench'>;
 
-export interface ServiceSettings {
-  outsourcedCutting: boolean;
-  outsourcedEdgeBanding: boolean;
-}
-
-export interface ProjectState {
-  projectName: string;
-  templateId: TemplateId;
-  cabinetParams: Record<CarcassTemplateId, CabinetParams>;
-  workbenchParams: WorkbenchParams;
-  sheet: SheetSettings;
-  materials: Record<MaterialRole, MaterialSpec>;
-  services: ServiceSettings;
+export interface ProjectState extends ProjectData {
+  activeItemId: string;
   /** Itens marcados no checklist de ferramentas. */
   toolChecks: Record<string, boolean>;
 
@@ -42,75 +46,135 @@ export interface ProjectState {
   hoveredPieceId: string | null;
 
   setProjectName: (name: string) => void;
-  setTemplate: (id: TemplateId) => void;
+  // Móveis
+  addItem: (templateId: TemplateId) => void;
+  duplicateItem: (id: string) => void;
+  removeItem: (id: string) => void;
+  setActiveItem: (id: string) => void;
+  updateItem: (id: string, patch: { name?: string; quantity?: number }) => void;
+  // Parâmetros do móvel ativo
   updateCabinet: (patch: Partial<CabinetParams>) => void;
   updateColumn: (columnId: string, patch: Partial<ColumnConfig>) => void;
   addColumn: () => void;
   removeColumn: (columnId: string) => void;
   updateWorkbench: (patch: Partial<WorkbenchParams>) => void;
-  resetTemplate: () => void;
+  resetActiveItem: () => void;
+  // Configurações do projeto
   setSheet: (patch: Partial<SheetSettings>) => void;
   setMaterial: (role: MaterialRole, patch: Partial<MaterialSpec>) => void;
   setServices: (patch: Partial<ServiceSettings>) => void;
+  setPrices: (patch: Partial<Omit<PriceSettings, 'sheetPrices' | 'itemPrices'>>) => void;
+  /** Define (ou remove, com null) o preço de uma chapa ou insumo. */
+  setSheetPrice: (materialKey: string, price: number | null) => void;
+  setItemPrice: (itemId: string, price: number | null) => void;
+  // Arquivo
+  loadProject: (data: ProjectData) => void;
+  newProject: () => void;
   toggleTool: (id: string) => void;
   selectPiece: (id: string | null) => void;
   hoverPiece: (id: string | null) => void;
 }
 
-export const DEFAULT_SHEET: SheetSettings = { length: 2750, width: 1830, kerf: 4, trim: 10 };
+function initialProject(): ProjectData & { activeItemId: string } {
+  const item = createItem('base-cabinet');
+  return {
+    projectName: 'Meu projeto',
+    items: [item],
+    activeItemId: item.id,
+    sheet: DEFAULT_SHEET,
+    materials: DEFAULT_MATERIALS,
+    services: DEFAULT_SERVICES,
+    prices: DEFAULT_PRICES,
+  };
+}
 
-export const DEFAULT_MATERIALS: Record<MaterialRole, MaterialSpec> = {
-  carcass: { role: 'carcass', label: 'MDF Branco TX', hasGrain: false },
-  front: { role: 'front', label: 'MDF Branco TX', hasGrain: false },
-  back: { role: 'back', label: 'HDF Branco', hasGrain: false },
-  drawer: { role: 'drawer', label: 'MDF Branco TX', hasGrain: false },
+const setPrice = (map: Record<string, number>, key: string, price: number | null) => {
+  const next = { ...map };
+  if (price === null || !Number.isFinite(price)) delete next[key];
+  else next[key] = Math.max(0, price);
+  return next;
 };
 
-const isCarcass = (id: TemplateId): id is CarcassTemplateId => id !== 'workbench';
+/** Nome único para um móvel novo ("Balcão inferior 2"...). */
+function uniqueName(items: ProjectItem[], base: string) {
+  const names = new Set(items.map((i) => i.name));
+  if (!names.has(base)) return base;
+  let n = 2;
+  while (names.has(`${base} ${n}`)) n++;
+  return `${base} ${n}`;
+}
 
 export const useProjectStore = create<ProjectState>()(
   persist(
-    (set, get) => {
-      /** Aplica uma alteração nos parâmetros do template de caixa ativo. */
-      const patchCabinet = (fn: (p: CabinetParams) => CabinetParams) => {
-        const id = get().templateId;
-        if (!isCarcass(id)) return;
-        set((s) => ({ cabinetParams: { ...s.cabinetParams, [id]: fn(s.cabinetParams[id]) } }));
-      };
+    (set) => {
+      const patchActive = (fn: (item: ProjectItem) => ProjectItem) =>
+        set((s) => ({ items: s.items.map((i) => (i.id === s.activeItemId ? fn(i) : i)) }));
+      /** Aplica uma alteração nos parâmetros do móvel ativo, se for de caixa. */
+      const patchCabinet = (fn: (p: CabinetParams) => CabinetParams) =>
+        patchActive((i) => (i.templateId === 'workbench' ? i : { ...i, params: fn(i.params) }));
 
       return {
-        projectName: 'Meu móvel',
-        templateId: 'base-cabinet',
-        cabinetParams: {
-          'base-cabinet': defaultParamsFor('base-cabinet'),
-          'wall-cabinet': defaultParamsFor('wall-cabinet'),
-          wardrobe: defaultParamsFor('wardrobe'),
-        },
-        workbenchParams: defaultParamsFor('workbench'),
-        sheet: DEFAULT_SHEET,
-        materials: DEFAULT_MATERIALS,
-        services: { outsourcedCutting: true, outsourcedEdgeBanding: false },
+        ...initialProject(),
         toolChecks: {},
         selectedPieceId: null,
         hoveredPieceId: null,
 
         setProjectName: (projectName) => set({ projectName }),
-        setTemplate: (templateId) => set({ templateId, selectedPieceId: null, hoveredPieceId: null }),
+
+        addItem: (templateId) =>
+          set((s) => {
+            const item = createItem(templateId, uniqueName(s.items, TEMPLATES[templateId].name));
+            return { items: [...s.items, item], activeItemId: item.id, selectedPieceId: null };
+          }),
+        duplicateItem: (id) =>
+          set((s) => {
+            const source = s.items.find((i) => i.id === id);
+            if (!source) return {};
+            const copy = { ...structuredClone(source), id: newItemId(), name: uniqueName(s.items, `${source.name} (cópia)`) };
+            const at = s.items.indexOf(source) + 1;
+            return { items: [...s.items.slice(0, at), copy, ...s.items.slice(at)], activeItemId: copy.id };
+          }),
+        removeItem: (id) =>
+          set((s) => {
+            if (s.items.length <= 1) return {};
+            const items = s.items.filter((i) => i.id !== id);
+            return { items, activeItemId: s.activeItemId === id ? items[0]!.id : s.activeItemId, selectedPieceId: null };
+          }),
+        setActiveItem: (activeItemId) => set({ activeItemId, selectedPieceId: null, hoveredPieceId: null }),
+        updateItem: (id, patch) =>
+          set((s) => ({
+            items: s.items.map((i) =>
+              i.id === id
+                ? { ...i, ...patch, quantity: patch.quantity !== undefined ? Math.max(1, Math.floor(patch.quantity)) : i.quantity }
+                : i,
+            ),
+          })),
+
         updateCabinet: (patch) => patchCabinet((p) => ({ ...p, ...patch })),
         updateColumn: (columnId, patch) =>
           patchCabinet((p) => ({ ...p, columns: p.columns.map((c) => (c.id === columnId ? { ...c, ...patch } : c)) })),
         addColumn: () => patchCabinet((p) => ({ ...p, columns: [...p.columns, makeColumn({ doors: 1, shelves: 1 })] })),
         removeColumn: (columnId) =>
           patchCabinet((p) => (p.columns.length <= 1 ? p : { ...p, columns: p.columns.filter((c) => c.id !== columnId) })),
-        updateWorkbench: (patch) => set((s) => ({ workbenchParams: { ...s.workbenchParams, ...patch } })),
-        resetTemplate: () => {
-          const id = get().templateId;
-          if (isCarcass(id)) set((s) => ({ cabinetParams: { ...s.cabinetParams, [id]: defaultParamsFor(id) } }));
-          else set({ workbenchParams: defaultParamsFor('workbench') });
-        },
+        updateWorkbench: (patch) =>
+          patchActive((i) => (i.templateId === 'workbench' ? { ...i, params: { ...i.params, ...patch } } : i)),
+        resetActiveItem: () =>
+          patchActive((i) =>
+            i.templateId === 'workbench'
+              ? { ...i, params: defaultParamsFor('workbench') }
+              : { ...i, params: defaultParamsFor(i.templateId) },
+          ),
+
         setSheet: (patch) => set((s) => ({ sheet: { ...s.sheet, ...patch } })),
         setMaterial: (role, patch) => set((s) => ({ materials: { ...s.materials, [role]: { ...s.materials[role], ...patch } } })),
         setServices: (patch) => set((s) => ({ services: { ...s.services, ...patch } })),
+        setPrices: (patch) => set((s) => ({ prices: { ...s.prices, ...patch } })),
+        setSheetPrice: (key, price) => set((s) => ({ prices: { ...s.prices, sheetPrices: setPrice(s.prices.sheetPrices, key, price) } })),
+        setItemPrice: (key, price) => set((s) => ({ prices: { ...s.prices, itemPrices: setPrice(s.prices.itemPrices, key, price) } })),
+
+        loadProject: (data) =>
+          set({ ...data, activeItemId: data.items[0]!.id, toolChecks: {}, selectedPieceId: null, hoveredPieceId: null }),
+        newProject: () => set({ ...initialProject(), toolChecks: {}, selectedPieceId: null, hoveredPieceId: null }),
         toggleTool: (id) => set((s) => ({ toolChecks: { ...s.toolChecks, [id]: !s.toolChecks[id] } })),
         selectPiece: (selectedPieceId) => set({ selectedPieceId }),
         hoverPiece: (hoveredPieceId) => set({ hoveredPieceId }),
@@ -118,13 +182,37 @@ export const useProjectStore = create<ProjectState>()(
     },
     {
       name: 'woodcraft-planner:v1',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       partialize: ({ selectedPieceId: _s, hoveredPieceId: _h, ...rest }) => rest,
+      migrate: (persisted, version) => migrateState(persisted, version) as unknown as ProjectState,
     },
   ),
 );
 
-/** Seletor de conveniência: parâmetros do template de caixa ativo (ou null na mesa). */
-export const useActiveCabinetParams = () =>
-  useProjectStore((s) => (isCarcass(s.templateId) ? s.cabinetParams[s.templateId] : null));
+/**
+ * Migra o estado salvo da versão 1 (um móvel por vez, parâmetros por template)
+ * para a versão 2 (lista de móveis).
+ */
+export function migrateState(persisted: unknown, version: number): Partial<ProjectState> {
+  const s = (persisted ?? {}) as Record<string, unknown>;
+  if (version >= 2) return s as Partial<ProjectState>;
+  const templateId = (typeof s.templateId === 'string' && s.templateId in TEMPLATES ? s.templateId : 'base-cabinet') as TemplateId;
+  const params =
+    templateId === 'workbench'
+      ? s.workbenchParams
+      : (s.cabinetParams as Record<string, unknown> | undefined)?.[templateId];
+  const item = parseItem({ templateId, params, name: TEMPLATES[templateId].name, quantity: 1 }) ?? createItem(templateId);
+  const { templateId: _t, cabinetParams: _c, workbenchParams: _w, ...rest } = s;
+  return {
+    ...(rest as Partial<ProjectState>),
+    projectName: typeof s.projectName === 'string' ? s.projectName : 'Meu projeto',
+    items: [item],
+    activeItemId: item.id,
+    prices: DEFAULT_PRICES,
+  };
+}
+
+/** Móvel ativo (sempre existe). */
+export const useActiveItem = () =>
+  useProjectStore((s) => s.items.find((i) => i.id === s.activeItemId) ?? s.items[0]!);

@@ -3,12 +3,12 @@
  * materiais e configuração da chapa para o plano de corte.
  */
 import { Box, Columns3, Hammer, Layers, PanelBottom, RotateCcw, Ruler, Scissors, SquareStack } from 'lucide-react';
-import { useProjectStore, useActiveCabinetParams } from '@/store/projectStore';
+import { useProjectStore, useActiveItem } from '@/store/projectStore';
 import { TEMPLATES } from '@/engine/templates';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import type { AssemblyMethod, CabinetParams, MaterialRole } from '@/types/woodcraft';
-import { FieldRow, NumberInput, Section, Segmented, SliderField, ThicknessPicker } from './fields';
+import type { AssemblyMethod, CabinetParams, MaterialRole, TemplateId, WorkbenchParams } from '@/types/woodcraft';
+import { FieldRow, NumberInput, Section, Segmented, SliderField, Stepper, ThicknessPicker } from './fields';
 import { ColumnEditor } from './ColumnEditor';
 
 const ASSEMBLY_OPTIONS: { value: AssemblyMethod; label: string; title: string }[] = [
@@ -17,14 +17,13 @@ const ASSEMBLY_OPTIONS: { value: AssemblyMethod; label: string; title: string }[
   { value: 'dowel', label: 'Cavilha', title: 'Cavilhas coladas' },
 ];
 
-function CabinetForm({ params }: { params: CabinetParams }) {
-  const templateId = useProjectStore((s) => s.templateId);
+function CabinetForm({ params, templateId }: { params: CabinetParams; templateId: TemplateId }) {
   const update = useProjectStore((s) => s.updateCabinet);
   const limits = TEMPLATES[templateId].limits;
 
   return (
     <>
-      <Section title="Dimensões externas" icon={<Ruler />}>
+      <Section title="Dimensões externas" icon={<Ruler />} mobileOpen>
         <SliderField label="Largura" value={params.width} min={limits.width[0]} max={limits.width[1]} step={10} onChange={(width) => update({ width })} />
         <SliderField label="Altura" value={params.height} min={limits.height[0]} max={limits.height[1]} step={10} onChange={(height) => update({ height })} hint={params.baseType !== 'none' ? 'Inclui o rodapé/pés; não inclui tampo de pedra.' : undefined} />
         <SliderField label="Profundidade" value={params.depth} min={limits.depth[0]} max={limits.depth[1]} step={10} onChange={(depth) => update({ depth })} hint="Profundidade da caixa, sem as frentes." />
@@ -116,13 +115,12 @@ function CabinetForm({ params }: { params: CabinetParams }) {
   );
 }
 
-function WorkbenchForm() {
-  const p = useProjectStore((s) => s.workbenchParams);
+function WorkbenchForm({ params: p }: { params: WorkbenchParams }) {
   const update = useProjectStore((s) => s.updateWorkbench);
   const limits = TEMPLATES.workbench.limits;
   return (
     <>
-      <Section title="Dimensões externas" icon={<Ruler />}>
+      <Section title="Dimensões externas" icon={<Ruler />} mobileOpen>
         <SliderField label="Largura" value={p.width} min={limits.width[0]} max={limits.width[1]} step={10} onChange={(width) => update({ width })} />
         <SliderField label="Altura" value={p.height} min={limits.height[0]} max={limits.height[1]} step={10} onChange={(height) => update({ height })} />
         <SliderField label="Profundidade" value={p.depth} min={limits.depth[0]} max={limits.depth[1]} step={10} onChange={(depth) => update({ depth })} />
@@ -164,8 +162,8 @@ function MaterialsForm() {
   const setMaterial = useProjectStore((s) => s.setMaterial);
   const services = useProjectStore((s) => s.services);
   const setServices = useProjectStore((s) => s.setServices);
-  const isWorkbench = useProjectStore((s) => s.templateId === 'workbench');
-  const roles: MaterialRole[] = isWorkbench ? ['carcass'] : ['carcass', 'front', 'back', 'drawer'];
+  const onlyWorkbenches = useProjectStore((s) => s.items.every((i) => i.templateId === 'workbench'));
+  const roles: MaterialRole[] = onlyWorkbenches ? ['carcass'] : ['carcass', 'front', 'back', 'drawer'];
 
   return (
     <>
@@ -236,25 +234,41 @@ function MaterialsForm() {
 }
 
 export function ParameterPanel() {
-  const templateId = useProjectStore((s) => s.templateId);
-  const resetTemplate = useProjectStore((s) => s.resetTemplate);
-  const cabinet = useActiveCabinetParams();
-  const template = TEMPLATES[templateId];
+  const item = useActiveItem();
+  const updateItem = useProjectStore((s) => s.updateItem);
+  const resetActiveItem = useProjectStore((s) => s.resetActiveItem);
+  const template = TEMPLATES[item.templateId];
 
   return (
     <aside className="flex flex-col border-b border-border bg-surface lg:h-full lg:overflow-hidden lg:border-b-0 lg:border-r">
-      <div className="flex items-start gap-3 border-b border-border px-4 py-3">
-        <Box className="mt-0.5 size-5 shrink-0 text-primary" />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold">{template.name}</h2>
-          <p className="text-xs leading-snug text-subtle">{template.description}</p>
+      <div className="space-y-2 border-b border-border px-4 py-3">
+        <div className="flex items-start gap-3">
+          <Box className="mt-1.5 size-5 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <input
+              value={item.name}
+              onChange={(e) => updateItem(item.id, { name: e.target.value })}
+              aria-label="Nome do móvel"
+              className="w-full rounded border border-transparent bg-transparent px-1 text-sm font-semibold hover:border-border focus:border-primary focus:outline-none"
+            />
+            <p className="px-1 text-xs leading-snug text-subtle">
+              {template.name} — {template.description}
+            </p>
+          </div>
+          <Button variant="ghost" size="icon" title="Restaurar medidas padrão deste móvel" aria-label="Restaurar padrão" onClick={resetActiveItem}>
+            <RotateCcw />
+          </Button>
         </div>
-        <Button variant="ghost" size="icon" title="Restaurar padrão do template" aria-label="Restaurar padrão" onClick={resetTemplate}>
-          <RotateCcw />
-        </Button>
+        <FieldRow label="Quantidade de móveis iguais" hint={item.quantity > 1 ? 'A lista de corte, o plano de corte e as compras já consideram todos.' : undefined}>
+          <Stepper value={item.quantity} min={1} max={50} onChange={(quantity) => updateItem(item.id, { quantity })} aria-label="Quantidade" />
+        </FieldRow>
       </div>
       <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        {cabinet ? <CabinetForm params={cabinet} /> : <WorkbenchForm />}
+        {item.templateId === 'workbench' ? (
+          <WorkbenchForm key={item.id} params={item.params} />
+        ) : (
+          <CabinetForm key={item.id} params={item.params} templateId={item.templateId} />
+        )}
         <MaterialsForm />
       </div>
     </aside>

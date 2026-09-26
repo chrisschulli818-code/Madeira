@@ -6,8 +6,11 @@
  * - corrediças a partir da profundidade interna,
  * - dobradiças a partir da altura de cada porta,
  * - fita de borda a partir da lista de corte (+10% de sobra).
+ *
+ * O `id` de cada item (categoria + nome + especificação) é estável e serve também
+ * como chave de preço no orçamento.
  */
-import type { AssembledModel, HardwareItem, MaterialRole, MaterialSpec } from '@/types/woodcraft';
+import type { AssembledModel, CutPiece, HardwareItem, MaterialRole, MaterialSpec } from '@/types/woodcraft';
 import { BACK_NAIL_SPACING, EDGE_BANDING_WASTE, FASTENER_SPACING } from './constants';
 import { edgeBandingMeters } from './cabinetEngine';
 
@@ -53,12 +56,106 @@ class ItemList {
   }
 
   list(): HardwareItem[] {
-    const order = { fixacao: 0, ferragem: 1, acabamento: 2, insumo: 3 } as const;
-    return [...this.items.values()].sort((a, b) => order[a.category] - order[b.category]);
+    return [...this.items.values()].sort((a, b) => CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category]);
   }
 }
 
-export function computeHardware(model: AssembledModel, materials: Record<MaterialRole, MaterialSpec>): HardwareItem[] {
+export interface HardwareOptions {
+  /**
+   * false = omite os consumíveis do projeto (fita de borda, lixa, cola), usado ao somar
+   * vários móveis: eles são calculados uma vez sobre o total (ver `consumableItems`).
+   */
+  includeConsumables?: boolean;
+}
+
+/**
+ * Fita de borda agrupada por material e largura, com sobra.
+ * A quantidade das peças já deve refletir quantos móveis iguais serão feitos.
+ */
+export function edgeBandingItems(pieces: CutPiece[], materials: Record<MaterialRole, MaterialSpec>): Omit<HardwareItem, 'id'>[] {
+  const bands = new Map<string, { label: string; width: number; meters: number }>();
+  for (const piece of pieces) {
+    const meters = edgeBandingMeters(piece);
+    if (meters <= 0) continue;
+    const label = materials[piece.material].label;
+    const width = edgeBandWidthFor(piece.thickness);
+    const key = `${label}|${width}`;
+    const entry = bands.get(key) ?? { label, width, meters: 0 };
+    entry.meters += meters;
+    bands.set(key, entry);
+  }
+  return [...bands.values()].map((b) => ({
+    category: 'acabamento' as const,
+    name: `Fita de borda ${b.width} mm`,
+    specification: `${b.label}, pré-colada p/ ferro`,
+    quantity: Math.ceil(b.meters * (1 + EDGE_BANDING_WASTE)),
+    unit: 'm' as const,
+    application: `${b.meters.toFixed(1)} m líquidos + ${EDGE_BANDING_WASTE * 100}% de sobra`,
+  }));
+}
+
+const glueItem = (): Omit<HardwareItem, 'id'> => ({
+  category: 'insumo',
+  name: 'Cola PVA para madeira',
+  specification: 'Frasco 500 g',
+  quantity: 1,
+  unit: 'un',
+  application: 'Colagem das cavilhas',
+});
+
+/**
+ * Consumíveis calculados uma vez para o conjunto de peças: fita de borda, lixa e,
+ * se alguma montagem for por cavilhas, cola.
+ */
+export function consumableItems(
+  pieces: CutPiece[],
+  materials: Record<MaterialRole, MaterialSpec>,
+  needsGlue: boolean,
+): Omit<HardwareItem, 'id'>[] {
+  return [
+    ...edgeBandingItems(pieces, materials),
+    ...(needsGlue ? [glueItem()] : []),
+    {
+      category: 'insumo',
+      name: 'Lixa para madeira',
+      specification: 'Grãos 120 e 220',
+      quantity: 4,
+      unit: 'un',
+      application: 'Acabamento das bordas após refilar a fita',
+    },
+  ];
+}
+
+const CATEGORY_ORDER = { fixacao: 0, ferragem: 1, acabamento: 2, insumo: 3 } as const;
+
+/**
+ * Soma listas de insumos de vários móveis. Cada lista é multiplicada pela quantidade
+ * de móveis iguais; itens com o mesmo id (categoria + nome + especificação) são somados.
+ */
+export function mergeHardware(entries: Array<{ items: HardwareItem[]; quantity: number; label?: string }>): HardwareItem[] {
+  const merged = new Map<string, HardwareItem>();
+  const labelled = entries.filter((e) => e.label).length > 1;
+  for (const { items, quantity, label } of entries) {
+    for (const item of items) {
+      const qty = item.unit === 'm' ? Math.round(item.quantity * quantity * 10) / 10 : item.quantity * quantity;
+      const application = labelled && label ? `${label}${quantity > 1 ? ` (×${quantity})` : ''}: ${item.application}` : item.application;
+      const existing = merged.get(item.id);
+      if (existing) {
+        existing.quantity = Math.round((existing.quantity + qty) * 10) / 10;
+        existing.application += ` · ${application}`;
+      } else {
+        merged.set(item.id, { ...item, quantity: qty, application });
+      }
+    }
+  }
+  return [...merged.values()].sort((a, b) => CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category]);
+}
+
+export function computeHardware(
+  model: AssembledModel,
+  materials: Record<MaterialRole, MaterialSpec>,
+  options: HardwareOptions = {},
+): HardwareItem[] {
   const items = new ItemList();
   const structural = model.pieces.find((p) => p.role === 'side' || p.role === 'leg-panel');
   const T = structural?.thickness ?? 18;
@@ -114,14 +211,7 @@ export function computeHardware(model: AssembledModel, materials: Record<Materia
       unit: 'un',
       application: `Estrutura: ${carcassJoints.length} junções coladas, ~1 a cada 128 mm`,
     });
-    items.add({
-      category: 'insumo',
-      name: 'Cola PVA para madeira',
-      specification: 'Frasco 500 g',
-      quantity: 1,
-      unit: 'un',
-      application: 'Colagem das cavilhas',
-    });
+    if (options.includeConsumables !== false) items.add(glueItem());
   }
 
   if (drawerJoints.length) {
@@ -281,10 +371,10 @@ export function computeHardware(model: AssembledModel, materials: Record<Materia
     items.add({
       category: 'ferragem',
       name: 'Tubo oblongo cromado',
-      specification: `Cortes: ${model.hangingRods.map((r) => `${r} mm`).join(', ')}`,
+      specification: 'Ø 25 × 15 mm (oblongo)',
       quantity: Math.ceil(meters * 10) / 10,
       unit: 'm',
-      application: 'Cabideiro',
+      application: `Cabideiro — cortes: ${model.hangingRods.map((r) => `${r} mm`).join(', ')}`,
     });
     items.add({
       category: 'ferragem',
@@ -325,37 +415,10 @@ export function computeHardware(model: AssembledModel, materials: Record<Materia
     });
   }
 
-  // --- Fita de borda ----------------------------------------------------------------
-  const bands = new Map<string, { label: string; width: number; meters: number }>();
-  for (const piece of model.pieces) {
-    const meters = edgeBandingMeters(piece);
-    if (meters <= 0) continue;
-    const label = materials[piece.material].label;
-    const width = edgeBandWidthFor(piece.thickness);
-    const key = `${label}|${width}`;
-    const entry = bands.get(key) ?? { label, width, meters: 0 };
-    entry.meters += meters;
-    bands.set(key, entry);
+  // --- Consumíveis (fita de borda, lixa) ------------------------------------------------
+  if (options.includeConsumables !== false) {
+    for (const item of consumableItems(model.pieces, materials, false)) items.add(item);
   }
-  for (const b of bands.values()) {
-    items.add({
-      category: 'acabamento',
-      name: `Fita de borda ${b.width} mm`,
-      specification: `${b.label} — ${b.meters.toFixed(1)} m líquidos + ${EDGE_BANDING_WASTE * 100}% de sobra (pré-colada p/ ferro)`,
-      quantity: Math.ceil(b.meters * (1 + EDGE_BANDING_WASTE)),
-      unit: 'm',
-      application: 'Bordas aparentes conforme lista de corte',
-    });
-  }
-
-  items.add({
-    category: 'insumo',
-    name: 'Lixa para madeira',
-    specification: 'Grãos 120 e 220',
-    quantity: 4,
-    unit: 'un',
-    application: 'Acabamento das bordas após refilar a fita',
-  });
 
   return items.list();
 }
