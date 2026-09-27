@@ -4,7 +4,8 @@
  */
 import { useMemo, useRef } from 'react';
 import type { PieceDrag } from '@/hooks/useDragPieces';
-import type { AssembledModel, Box3D, CutPiece } from '@/types/woodcraft';
+import type { AssembledModel, Annotation, Box3D, CutPiece } from '@/types/woodcraft';
+import { distanceMm } from '@/engine/motionEngine';
 import { HIGHLIGHT_COLOR, MATERIAL_COLORS, SELECT_COLOR } from '@/lib/pieceColors';
 import { fmt } from '@/lib/utils';
 
@@ -21,6 +22,8 @@ interface Props {
   className?: string;
   /** Arrastar peças (somente na vista frontal). */
   drag?: PieceDrag;
+  /** Marcações do móvel (notas numeradas e medidas). */
+  notes?: Annotation[];
 }
 
 interface Drawn {
@@ -78,7 +81,7 @@ function Dim({
   );
 }
 
-export function Elevation2D({ model, view, showFronts = true, hoveredId, selectedId, onHover, onSelect, className, drag }: Props) {
+export function Elevation2D({ model, view, showFronts = true, hoveredId, selectedId, onHover, onSelect, className, drag, notes = [] }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   /** O clique que acontece ao soltar um arraste não deve (des)selecionar a peça. */
   const justDragged = useRef(false);
@@ -191,6 +194,39 @@ export function Elevation2D({ model, view, showFronts = true, hoveredId, selecte
       {view === 'side' && (
         <Dim x1={0} y1={0} x2={model.layout.internalDepth} y2={0} offset={-pad * 0.45} label={`útil ${fmt(Math.round(model.layout.internalDepth))}`} size={text * 0.85} />
       )}
+      {/* Marcações: notas numeradas e medidas (projetadas na vista) */}
+      {(() => {
+        const proj = (p: { x: number; y: number; z: number }) => ({ u: view === 'front' ? p.x : p.z, v: H - p.y });
+        let n = 0;
+        return notes.map((a) => {
+          const pa = proj(a.a);
+          if (a.kind === 'medida' && a.b) {
+            const pb = proj(a.b);
+            return (
+              <g key={a.id} pointerEvents="none" data-testid="elevation-measure">
+                <line x1={pa.u} y1={pa.v} x2={pb.u} y2={pb.v} stroke="#1d4ed8" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+                <circle cx={pa.u} cy={pa.v} r={text * 0.18} fill="#1d4ed8" />
+                <circle cx={pb.u} cy={pb.v} r={text * 0.18} fill="#1d4ed8" />
+                <text x={(pa.u + pb.u) / 2} y={(pa.v + pb.v) / 2 - text * 0.3} fontSize={text * 0.8} fill="#1d4ed8" textAnchor="middle" fontWeight={600}>
+                  {fmt(distanceMm(a.a, a.b))}
+                </text>
+              </g>
+            );
+          }
+          n++;
+          return (
+            <g key={a.id} pointerEvents="none" data-testid="elevation-note">
+              <circle cx={pa.u} cy={pa.v} r={text * 0.8} fill="#be123c" stroke="#fff" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+              <text x={pa.u} y={pa.v} fontSize={text * 0.95} fill="#fff" textAnchor="middle" dominantBaseline="central" fontWeight={700}>
+                {n}
+              </text>
+              {a.text && (
+                <title>{a.text}</title>
+              )}
+            </g>
+          );
+        });
+      })()}
     </svg>
   );
 }

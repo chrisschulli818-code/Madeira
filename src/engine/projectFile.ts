@@ -6,6 +6,8 @@
  * arquivos antigos ou editados à mão não quebrem o app.
  */
 import type {
+  Annotation,
+  Point3,
   BedParams,
   PropParams,
   FurniturePlacement,
@@ -151,6 +153,22 @@ const ENUMS: Partial<Record<keyof CabinetParams, readonly string[]>> = {
   assembly: ['screw', 'minifix', 'dowel'],
 };
 
+function parsePoint(raw: unknown): Point3 | null {
+  if (!isObj(raw)) return null;
+  const [x, y, z] = [raw.x, raw.y, raw.z].map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : NaN));
+  return Number.isNaN(x! + y! + z!) ? null : { x: x!, y: y!, z: z! };
+}
+
+function parseAnnotation(raw: unknown): Annotation | null {
+  if (!isObj(raw)) return null;
+  const a = parsePoint(raw.a);
+  if (!a) return null;
+  const kind = raw.kind === 'medida' ? 'medida' : 'nota';
+  const b = parsePoint(raw.b);
+  if (kind === 'medida' && !b) return null;
+  return { id: strOr(raw.id, `mk${Math.random().toString(36).slice(2, 9)}`), kind, text: typeof raw.text === 'string' ? raw.text.slice(0, 500) : '', a, ...(kind === 'medida' ? { b: b! } : {}) };
+}
+
 export function parseItem(raw: unknown): ProjectItem | null {
   if (!isObj(raw) || typeof raw.templateId !== 'string' || !(raw.templateId in TEMPLATES)) return null;
   const templateId = raw.templateId as TemplateId;
@@ -158,6 +176,7 @@ export function parseItem(raw: unknown): ProjectItem | null {
     id: strOr(raw.id, newItemId()),
     name: strOr(raw.name, TEMPLATES[templateId].name),
     quantity: Math.max(1, Math.floor(numOr(raw.quantity, 1))),
+    ...(Array.isArray(raw.notes) ? { notes: raw.notes.map(parseAnnotation).filter((n): n is Annotation => n !== null) } : {}),
   };
   if (templateId === 'bed') {
     const params = mergeKnown<BedParams>(defaultParamsFor('bed'), raw.params);

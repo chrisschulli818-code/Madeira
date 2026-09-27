@@ -34,6 +34,10 @@ A partir das medidas externas e das opções de construção, gera automaticamen
   prateleira a 37 mm, rasgo do fundo), com cotas u/v a partir do canto de referência, desenho da peça e marcadores no
   3D (chave **Encaixes**), além do **passo a passo de montagem**. No ambiente, módulos vizinhos recebem parafusos de
   união. Tudo vai para o PDF;
+- **Abrir portas e gavetas e fazer marcações**: no 3D, a ferramenta **Abrir/fechar** faz as portas girarem na
+  dobradiça e as gavetas deslizarem com a caixa (clique numa frente, ou **Abrir tudo**). **Nota** coloca um alfinete
+  numerado com texto no ponto clicado e **Medida** mede a distância entre dois pontos (encaixa nos cantos e bordas
+  das peças). As marcações ficam salvas no projeto, aparecem nas vistas frontal/lateral e vão para o PDF;
 - **Tela expandida**: esconde cabeçalho e abas e deixa só o editor e o 3D (botão **Expandir**, Esc para sair).
   **Novo → Do zero** já abre o projeto em branco nesse modo.
 

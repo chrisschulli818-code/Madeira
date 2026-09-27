@@ -4,12 +4,13 @@
  * Prateleiras, gavetas e painéis do móvel livre podem ser arrastados: o ponteiro é projetado
  * num plano vertical (paralelo à frente do móvel) e o motor de encaixe posiciona a peça.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
-import { Canvas, useThree } from '@react-three/fiber';
-import { Edges, Grid, OrbitControls } from '@react-three/drei';
-import type { AssembledModel, Box3D, CutPiece, MachiningOp } from '@/types/woodcraft';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Edges, Grid, Html, Line, OrbitControls } from '@react-three/drei';
+import type { AssembledModel, Annotation, Box3D, CutPiece, MachiningOp, Point3 } from '@/types/woodcraft';
 import { MACHINING_COLORS } from '@/engine/joineryEngine';
+import { distanceMm, instanceRef, motionIndex, type Motion } from '@/engine/motionEngine';
 import { HIGHLIGHT_COLOR, MATERIAL_COLORS, SELECT_COLOR } from '@/lib/pieceColors';
 import type { PieceDrag } from '@/hooks/useDragPieces';
 
@@ -28,6 +29,119 @@ interface Props {
   drag?: PieceDrag;
   /** Furos/encaixes para mostrar sobre as peças (só com a vista montada). */
   markers?: MachiningOp[];
+  /**
+   * Ferramenta do clique: editar (selecionar/arrastar), abrir (portas e gavetas),
+   * nota (alfinete com texto) ou medida (dois pontos).
+   */
+  tool?: SceneTool;
+  motions?: Motion[];
+  /** Portas/gavetas abertas (ids dos movimentos). */
+  openIds?: ReadonlySet<string>;
+  onToggleMotion?: (id: string) => void;
+  /** Clique numa peça com a ferramenta de nota/medida: ponto (mm) e caixa da peça clicada. */
+  onSurfaceClick?: (point: Point3, box: Box3D) => void;
+  notes?: Annotation[];
+  /** Primeiro ponto de uma medida em andamento. */
+  pendingPoint?: Point3 | null;
+  activeNoteId?: string | null;
+}
+
+export type SceneTool = 'editar' | 'abrir' | 'nota' | 'medida';
+
+const NOTE_COLOR = '#be123c';
+const MEASURE_COLOR = '#1d4ed8';
+
+/** Grupo animado de uma porta (gira na dobradiça) ou gaveta (desliza), de fechado (0) a aberto (1). */
+function MotionGroup({ motion, open, children }: { motion: Motion; open: boolean; children: ReactNode }) {
+  const ref = useRef<THREE.Group>(null);
+  const t = useRef(open ? 1 : 0);
+  const apply = () => {
+    const g = ref.current;
+    if (!g) return;
+    if (motion.kind === 'door') g.rotation.y = motion.sign * THREE.MathUtils.degToRad(motion.angle) * t.current;
+    else g.position[motion.axis] = (motion.kind === 'drawer' ? motion.dir * motion.travel * t.current : 0) * MM;
+  };
+  useFrame((_, dt) => {
+    const target = open ? 1 : 0;
+    if (t.current === target) return;
+    t.current += (target - t.current) * Math.min(1, dt * 7);
+    if (Math.abs(target - t.current) < 0.002) t.current = target;
+    apply();
+  });
+  useEffect(apply);
+  if (motion.kind === 'door') {
+    const { x, z } = motion.pivot;
+    return (
+      <group position={[x * MM, 0, z * MM]}>
+        <group ref={ref}>
+          <group position={[-x * MM, 0, -z * MM]}>{children}</group>
+        </group>
+      </group>
+    );
+  }
+  return <group ref={ref}>{children}</group>;
+}
+
+const toVec = (p: Point3): Vec3 => [p.x * MM, p.y * MM, p.z * MM];
+
+/** Notas (alfinetes numerados) e medidas (linha com a distância) sobre o móvel. */
+function AnnotationLayer({ notes, pending, activeId }: { notes: Annotation[]; pending?: Point3 | null; activeId?: string | null }) {
+  let noteN = 0;
+  return (
+    <>
+      {notes.map((n) => {
+        const active = n.id === activeId;
+        if (n.kind === 'medida' && n.b) {
+          const mid: Point3 = { x: (n.a.x + n.b.x) / 2, y: (n.a.y + n.b.y) / 2, z: (n.a.z + n.b.z) / 2 };
+          return (
+            <group key={n.id}>
+              <Line points={[toVec(n.a), toVec(n.b)]} color={MEASURE_COLOR} lineWidth={active ? 3.5 : 2} depthTest={false} renderOrder={3} />
+              {[n.a, n.b].map((p, i) => (
+                <mesh key={i} position={toVec(p)} raycast={() => null} renderOrder={3}>
+                  <sphereGeometry args={[6 * MM, 12, 12]} />
+                  <meshBasicMaterial color={MEASURE_COLOR} depthTest={false} />
+                </mesh>
+              ))}
+              <Html position={toVec(mid)} center zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
+                <div
+                  className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white shadow ${active ? 'ring-2 ring-white' : ''}`}
+                  style={{ background: MEASURE_COLOR }}
+                >
+                  {distanceMm(n.a, n.b)} mm{n.text ? ` · ${n.text}` : ''}
+                </div>
+              </Html>
+            </group>
+          );
+        }
+        noteN++;
+        return (
+          <group key={n.id}>
+            <mesh position={toVec(n.a)} raycast={() => null} renderOrder={3}>
+              <sphereGeometry args={[8 * MM, 12, 12]} />
+              <meshBasicMaterial color={NOTE_COLOR} depthTest={false} />
+            </mesh>
+            <Html position={toVec(n.a)} zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
+              <div className="flex -translate-y-full items-end gap-1 pb-1.5 pl-1">
+                <span
+                  className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white shadow ${active ? 'ring-2 ring-white' : ''}`}
+                  style={{ background: NOTE_COLOR }}
+                >
+                  {noteN}
+                </span>
+                {n.text && <span className="max-w-44 truncate rounded bg-white/95 px-1.5 py-0.5 text-[11px] text-neutral-800 shadow">{n.text}</span>}
+              </div>
+            </Html>
+          </group>
+        );
+      })}
+      {pending && (
+        <mesh position={toVec(pending)} raycast={() => null} renderOrder={3}>
+          <sphereGeometry args={[7 * MM, 12, 12]} />
+          <meshBasicMaterial color={MEASURE_COLOR} depthTest={false} />
+        </mesh>
+      )}
+    </>
+  );
 }
 
 type Vec3 = [number, number, number];
@@ -104,6 +218,8 @@ function PieceMesh({
   draggable,
   onDragStart,
   onGrabHover,
+  onToolClick,
+  toolCursor,
 }: {
   piece: CutPiece;
   box: Box3D;
@@ -116,6 +232,10 @@ function PieceMesh({
   onDragStart: (box: Box3D, point: THREE.Vector3) => void;
   /** Informa que o ponteiro está sobre uma peça arrastável (a órbita da câmera é pausada). */
   onGrabHover: (over: boolean) => void;
+  /** Clique tratado pela ferramenta ativa (abrir, nota, medida) em vez de selecionar a peça. */
+  onToolClick?: (point: THREE.Vector3) => void;
+  /** Cursor de mão/alvo quando a ferramenta ativa age sobre esta peça. */
+  toolCursor?: string;
 }) {
   const controls = useThree((s) => s.controls) as ControlsLike;
   const color = hovered ? HIGHLIGHT_COLOR : selected ? SELECT_COLOR : (piece.color ?? MATERIAL_COLORS[piece.material]);
@@ -125,6 +245,7 @@ function PieceMesh({
       onPointerOver={(e) => {
         e.stopPropagation();
         onHover(piece.id);
+        if (toolCursor) document.body.style.cursor = toolCursor;
         if (draggable) {
           document.body.style.cursor = 'grab';
           // Sobre uma peça arrastável a órbita fica desligada: o clique arrasta a peça, não gira a câmera.
@@ -135,7 +256,7 @@ function PieceMesh({
       onPointerOut={(e) => {
         e.stopPropagation();
         onHover(null);
-        if (document.body.style.cursor === 'grab') document.body.style.cursor = '';
+        if (document.body.style.cursor === 'grab' || (toolCursor && document.body.style.cursor === toolCursor)) document.body.style.cursor = '';
         if (draggable) onGrabHover(false);
       }}
       onPointerDown={(e) => {
@@ -146,7 +267,10 @@ function PieceMesh({
       }}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect(selected ? null : piece.id);
+        // Clique depois de girar a câmera não conta.
+        if (e.delta > 6) return;
+        if (onToolClick) onToolClick(e.point.clone());
+        else onSelect(selected ? null : piece.id);
       }}
     >
       <boxGeometry args={[box.w * MM, box.h * MM, box.d * MM]} />
@@ -156,7 +280,25 @@ function PieceMesh({
   );
 }
 
-export default function Scene3D({ model, showFronts, explode, hoveredId, selectedId, onHover, onSelect, drag, markers }: Props) {
+export default function Scene3D({
+  model,
+  showFronts,
+  explode,
+  hoveredId,
+  selectedId,
+  onHover,
+  onSelect,
+  drag,
+  markers,
+  tool = 'editar',
+  motions = [],
+  openIds,
+  onToggleMotion,
+  onSurfaceClick,
+  notes = [],
+  pendingPoint,
+  activeNoteId,
+}: Props) {
   const { width: W, height: H, depth: D } = model.overall;
   // Durante o arraste a cena fica "congelada" (o móvel pode crescer sem deslocar a vista).
   const [frozen, setFrozen] = useState<{ size: number; center: Vec3; planeZ: number } | null>(null);
@@ -191,7 +333,7 @@ export default function Scene3D({ model, showFronts, explode, hoveredId, selecte
             const cy = (box.y + box.h / 2) * MM - center[1];
             const cz = (box.z + box.d / 2) * MM - center[2] + (FRONT_ROLES.has(piece.role) ? size * 0.3 : 0);
             const f = explode * 0.6;
-            return { piece, box, key: `${piece.id}-${i}`, offset: [cx * f, cy * f, cz * f] as [number, number, number] };
+            return { piece, box, ref: instanceRef(piece.id, i), key: `${piece.id}-${i}`, offset: [cx * f, cy * f, cz * f] as [number, number, number] };
           }),
         ),
     [model.pieces, showFronts, explode, size, center[0], center[1], center[2]],
@@ -208,21 +350,53 @@ export default function Scene3D({ model, showFronts, explode, hoveredId, selecte
       <directionalLight position={[3, 5, 4]} intensity={1.6} />
       <directionalLight position={[-4, 2, -3]} intensity={0.4} />
       <group position={[-center[0], 0, -center[2]]}>
-        {items.map(({ piece, box, key, offset }) => (
-          <PieceMesh
-            key={key}
-            piece={piece}
-            box={box}
-            offset={offset}
-            hovered={piece.id === hoveredId}
-            selected={piece.id === selectedId}
-            onHover={onHover}
-            onSelect={select}
-            draggable={!!drag && explode === 0 && drag.canDrag(box)}
-            onDragStart={startDrag}
-            onGrabHover={setOverGrab}
-          />
-        ))}
+        {(() => {
+          const byRef = motionIndex(motions);
+          const mesh = ({ piece, box, key, offset, ref }: (typeof items)[number]) => {
+            const motion = byRef.get(ref);
+            const toolClick =
+              tool === 'abrir'
+                ? motion
+                  ? () => onToggleMotion?.(motion.id)
+                  : () => undefined
+                : tool === 'nota' || tool === 'medida'
+                  ? (p: THREE.Vector3) => onSurfaceClick?.({ x: (p.x + center[0]) / MM, y: p.y / MM, z: (p.z + center[2]) / MM }, box)
+                  : undefined;
+            return (
+              <PieceMesh
+                key={key}
+                piece={piece}
+                box={box}
+                offset={offset}
+                hovered={piece.id === hoveredId}
+                selected={piece.id === selectedId}
+                onHover={onHover}
+                onSelect={select}
+                draggable={tool === 'editar' && !!drag && explode === 0 && drag.canDrag(box)}
+                onDragStart={startDrag}
+                onGrabHover={setOverGrab}
+                onToolClick={toolClick}
+                toolCursor={tool === 'abrir' ? (motion ? 'pointer' : undefined) : tool === 'editar' ? undefined : 'crosshair'}
+              />
+            );
+          };
+          const still = items.filter((it) => !byRef.has(it.ref));
+          return (
+            <>
+              {still.map(mesh)}
+              {motions.map((m) => {
+                const parts = items.filter((it) => byRef.get(it.ref) === m);
+                if (!parts.length) return null;
+                return (
+                  <MotionGroup key={m.id} motion={m} open={!!openIds?.has(m.id)}>
+                    {parts.map(mesh)}
+                  </MotionGroup>
+                );
+              })}
+            </>
+          );
+        })()}
+        <AnnotationLayer notes={notes} pending={pendingPoint} activeId={activeNoteId} />
         {markers && explode === 0 && <DrillMarkers ops={markers.filter((o) => visibleIds.has(o.pieceId))} />}
       </group>
       {frozen && drag && <DragTracker
