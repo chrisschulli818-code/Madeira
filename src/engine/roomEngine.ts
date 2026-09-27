@@ -21,6 +21,8 @@ import type {
   Rotation,
   WallSide,
 } from '@/types/woodcraft';
+import { propInfo } from './propEngine';
+import { templateKind } from './templates';
 
 /** Distância em que o móvel "gruda" na parede (mm). */
 export const WALL_SNAP = 300;
@@ -77,8 +79,15 @@ export function wallOf(p: { x: number; z: number; rotation: Rotation }, fp: { w:
   return null;
 }
 
-/** Móvel que fica pendurado na parede por padrão. */
-const isWallMounted = (item: ProjectItem) => item.templateId === 'wall-cabinet';
+/** Altura padrão da base do móvel/objeto em relação ao piso (aéreos e TV ficam pendurados). */
+function defaultElevation(item: ProjectItem): number {
+  if (item.templateId === 'wall-cabinet') return WALL_CABINET_ELEVATION;
+  if (item.templateId === 'prop') return propInfo(item.params.type).elevation ?? 0;
+  return 0;
+}
+
+/** Peças baixinhas (tapete) não atrapalham ninguém: ficam fora das colisões. */
+const isFlat = (p: { size: { h: number } }) => p.size.h <= 30;
 
 /**
  * Posições de todas as unidades de móveis do projeto. As que o usuário já posicionou
@@ -124,8 +133,12 @@ export function resolvePlacements(
   for (const slot of slots) {
     const key = placementKey(slot.item.id, slot.unit);
     if (byKey.has(key)) continue;
-    const elevation = isWallMounted(slot.item) ? WALL_CABINET_ELEVATION : 0;
-    const spot = findFreeSpot(slot.size, elevation, room, [...byKey.values()]);
+    const elevation = defaultElevation(slot.item);
+    // Tapete vai para o meio do cômodo; o resto, para junto das paredes.
+    const spot =
+      slot.size.h <= 30
+        ? { x: Math.max(0, Math.round((room.width - slot.size.w) / 2)), z: Math.max(0, Math.round((room.depth - slot.size.d) / 2)), rotation: 0 as Rotation }
+        : findFreeSpot(slot.size, elevation, room, [...byKey.values()]);
     byKey.set(key, resolve(slot, { itemId: slot.item.id, unit: slot.unit, elevation, ...spot }, true));
   }
   return slots.map((slot) => byKey.get(placementKey(slot.item.id, slot.unit))!);
@@ -142,7 +155,7 @@ export function findFreeSpot(
   placed: ResolvedPlacement[],
 ): { x: number; z: number; rotation: Rotation } {
   const step = 10;
-  const blockers = placed.filter((o) => rangesOverlap(elevation, elevation + size.h, o.elevation, o.elevation + o.size.h));
+  const blockers = placed.filter((o) => !isFlat(o) && rangesOverlap(elevation, elevation + size.h, o.elevation, o.elevation + o.size.h));
   const doors = room.openings.filter((o) => o.kind === 'porta' && elevation < o.height).map((o) => doorSwingZone(o, room));
   const free = (x: number, z: number, fp: { w: number; d: number }) =>
     !blockers.some((o) => rangesOverlap(x, x + fp.w, o.x, o.x + o.footprint.w) && rangesOverlap(z, z + fp.d, o.z, o.z + o.footprint.d)) &&
@@ -220,7 +233,7 @@ export function snapPlacement(
 
   // 2) Encosta nos vizinhos da mesma faixa de altura.
   const me = { ...current, rotation, footprint: fp };
-  const neighbours = others.filter((o) => o.key !== current.key && verticalOverlap(me, o));
+  const neighbours = isFlat(current) ? [] : others.filter((o) => o.key !== current.key && !isFlat(o) && verticalOverlap(me, o));
   const snapTo = (value: number, candidates: number[]) => {
     let best = value;
     let bestDist = FURNITURE_SNAP;
@@ -280,8 +293,9 @@ export function roomWarnings(placements: ResolvedPlacement[], room: RoomSettings
       warnings.push(`"${a.name}" está fora do cômodo.`);
     }
     if (a.elevation + a.size.h > room.height + 0.5) warnings.push(`"${a.name}" passa da altura do teto (${room.height} mm).`);
+    if (isFlat(a)) return;
     for (const b of placements.slice(i + 1)) {
-      if (planOverlap(a, b) && verticalOverlap(a, b)) warnings.push(`"${a.name}" e "${b.name}" estão sobrepostos.`);
+      if (!isFlat(b) && planOverlap(a, b) && verticalOverlap(a, b)) warnings.push(`"${a.name}" e "${b.name}" estão sobrepostos.`);
     }
     for (const o of room.openings) {
       if (o.kind !== 'porta' || a.elevation >= o.height) continue;
@@ -303,6 +317,77 @@ export function placementTransform(p: ResolvedPlacement) {
     rotationY: (p.rotation * Math.PI) / 180,
     /** Deslocamento aplicado às peças (sistema do móvel) para centralizá-las no pivô. */
     pieceOffset: { x: -(p.origin.x + p.size.w / 2), y: -p.origin.y, z: -(p.origin.z + p.size.d / 2) },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pontos de vista para as imagens do ambiente
+// ---------------------------------------------------------------------------
+
+export interface Viewpoint {
+  id: string;
+  label: string;
+  /** Posição da câmera e ponto observado, em mm do cômodo (x, altura, z). */
+  position: { x: number; y: number; z: number };
+  target: { x: number; y: number; z: number };
+  fov: number;
+  /** Câmera dentro do cômodo (paredes opacas). */
+  inside: boolean;
+}
+
+/** Altura dos olhos de uma pessoa em pé (mm). */
+export const EYE_HEIGHT = 1600;
+
+/**
+ * Pontos de vista prontos: visão geral e de cima (por fora), um de cada parede olhando para a
+ * oposta, dos quatro cantos e de cada porta — todos na altura dos olhos.
+ */
+export function roomViewpoints(room: RoomSettings): Viewpoint[] {
+  const { width: W, depth: D, height: H } = room;
+  const S = Math.max(W, D, H);
+  const c = { x: W / 2, y: H / 3, z: D / 2 };
+  const eye = Math.min(EYE_HEIGHT, H - 200);
+  const inset = 250;
+  const look = 1000;
+  const views: Viewpoint[] = [
+    { id: 'geral', label: 'Visão geral (por fora)', position: { x: W / 2 + S * 0.35, y: S * 1.05, z: D / 2 + S * 1.25 }, target: c, fov: 40, inside: false },
+    { id: 'cima', label: 'De cima', position: { x: W / 2, y: S * 2.1, z: D / 2 + 1 }, target: { x: W / 2, y: 0, z: D / 2 }, fov: 45, inside: false },
+    { id: 'olha-fundo', label: 'Olhando para a parede do fundo', position: { x: W / 2, y: eye, z: D - inset }, target: { x: W / 2, y: look, z: 0 }, fov: 65, inside: true },
+    { id: 'olha-frente', label: 'Olhando para a parede da frente', position: { x: W / 2, y: eye, z: inset }, target: { x: W / 2, y: look, z: D }, fov: 65, inside: true },
+    { id: 'olha-esquerda', label: 'Olhando para a parede esquerda', position: { x: W - inset, y: eye, z: D / 2 }, target: { x: 0, y: look, z: D / 2 }, fov: 65, inside: true },
+    { id: 'olha-direita', label: 'Olhando para a parede direita', position: { x: inset, y: eye, z: D / 2 }, target: { x: W, y: look, z: D / 2 }, fov: 65, inside: true },
+    { id: 'canto-fe', label: 'Do canto frente-esquerda', position: { x: inset, y: eye, z: D - inset }, target: { x: W - inset, y: look, z: inset }, fov: 70, inside: true },
+    { id: 'canto-fd', label: 'Do canto frente-direita', position: { x: W - inset, y: eye, z: D - inset }, target: { x: inset, y: look, z: inset }, fov: 70, inside: true },
+    { id: 'canto-te', label: 'Do canto fundo-esquerda', position: { x: inset, y: eye, z: inset }, target: { x: W - inset, y: look, z: D - inset }, fov: 70, inside: true },
+    { id: 'canto-td', label: 'Do canto fundo-direita', position: { x: W - inset, y: eye, z: inset }, target: { x: inset, y: look, z: D - inset }, fov: 70, inside: true },
+  ];
+  room.openings
+    .filter((o) => o.kind === 'porta')
+    .forEach((o, i) => {
+      const along = o.offset + o.width / 2;
+      const position =
+        o.wall === 'fundo'
+          ? { x: along, y: eye, z: 400 }
+          : o.wall === 'frente'
+            ? { x: along, y: eye, z: D - 400 }
+            : o.wall === 'esquerda'
+              ? { x: 400, y: eye, z: along }
+              : { x: W - 400, y: eye, z: along };
+      views.push({ id: `porta-${o.id}`, label: `Entrando pela porta ${i + 1} (${WALL_LABELS[o.wall].toLowerCase()})`, position, target: { x: W / 2, y: look, z: D / 2 }, fov: 70, inside: true });
+    });
+  return views;
+}
+
+/** Ponto de vista personalizado: em pé no ponto (x, z) da planta, olhando para (tx, tz). */
+export function customViewpoint(room: RoomSettings, from: { x: number; z: number }, to: { x: number; z: number }): Viewpoint {
+  const eye = Math.min(EYE_HEIGHT, room.height - 200);
+  return {
+    id: 'personalizado',
+    label: 'Ponto de vista personalizado',
+    position: { x: from.x, y: eye, z: from.z },
+    target: { x: to.x, y: 1000, z: to.z },
+    fov: 65,
+    inside: from.x > 0 && from.x < room.width && from.z > 0 && from.z < room.depth,
   };
 }
 
@@ -356,7 +441,8 @@ export interface ModuleConnection {
 export function moduleConnections(placements: ResolvedPlacement[]): ModuleConnection[] {
   const out: ModuleConnection[] = [];
   const touch = (a0: number, a1: number, b0: number, b1: number) => Math.abs(a1 - b0) <= 2 || Math.abs(b1 - a0) <= 2;
-  const eligible = placements.filter((p) => p.templateId !== 'workbench');
+  // Só módulos de caixa se unem entre si (camas, mesas e objetos ficam de fora).
+  const eligible = placements.filter((p) => templateKind(p.templateId) === 'carcass');
   for (let i = 0; i < eligible.length; i++) {
     for (let j = i + 1; j < eligible.length; j++) {
       const a = eligible[i]!;

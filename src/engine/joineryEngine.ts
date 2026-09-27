@@ -40,10 +40,24 @@ const overlap = (a: Box3D, b: Box3D, ax: Axis) => Math.min(max(a, ax), max(b, ax
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
 /** Papéis que formam a estrutura (unidos por parafuso/minifix/cavilha). */
-const STRUCTURAL: ReadonlySet<PieceRole> = new Set(['side', 'bottom', 'top', 'rail', 'divider', 'fixed-shelf', 'leg-panel', 'apron']);
+const STRUCTURAL: ReadonlySet<PieceRole> = new Set(['side', 'bottom', 'top', 'rail', 'divider', 'fixed-shelf', 'leg-panel', 'apron', 'headboard', 'footboard', 'bed-rail', 'cleat', 'slat']);
 
 /** Ordem de montagem: base primeiro, depois divisórias, prateleiras fixas, tampo/travessas, saia. */
-const ROLE_ORDER: Partial<Record<PieceRole, number>> = { bottom: 1, 'leg-panel': 1, divider: 2, 'fixed-shelf': 3, top: 4, rail: 4, apron: 5, side: 9 };
+const ROLE_ORDER: Partial<Record<PieceRole, number>> = {
+  bottom: 1,
+  'leg-panel': 1,
+  'bed-rail': 1,
+  divider: 2,
+  cleat: 2,
+  'fixed-shelf': 3,
+  top: 4,
+  rail: 4,
+  slat: 4,
+  apron: 5,
+  side: 9,
+  headboard: 9,
+  footboard: 9,
+};
 
 export const MACHINING_LABELS: Record<MachiningKind, string> = {
   parafuso: 'Furo passante p/ parafuso (escarear)',
@@ -135,7 +149,7 @@ interface ButtJoint {
 
 export function computeJoinery(model: AssembledModel): JoineryPlan {
   const list = new OpList();
-  const all: Inst[] = model.pieces.flatMap((piece) => piece.instances.map((box, i) => instOf(piece, i, box)));
+  const all: Inst[] = model.pieces.filter((p) => !p.decorative).flatMap((piece) => piece.instances.map((box, i) => instOf(piece, i, box)));
   const structural = all.filter((i) => STRUCTURAL.has(i.piece.role));
   const center: Point = { x: model.overall.width / 2, y: model.overall.height / 2, z: model.overall.depth / 2 };
   const T = structural[0]?.box ? size(structural[0].box, structural[0].t) : 18;
@@ -342,10 +356,17 @@ function assemblySteps(
   if (model.pieces.some((p) => p.role === 'plinth')) {
     steps.push({ title: 'Fixe o rodapé', detail: 'Prenda o rodapé por baixo da base com as cantoneiras, respeitando o recuo.' });
   }
-  if (model.drawers.length) {
+  const rolling = model.drawers.filter((d) => d.runner === 'rodizio').length;
+  if (rolling) {
+    steps.push({
+      title: 'Monte os gavetões',
+      detail: `Monte ${rolling} gavetão(ões) (4 cantos parafusados), pregue o fundo por baixo, parafuse 4 rodízios sob cada um e fixe a frente deixando 3 mm de folga para a lateral da cama.`,
+    });
+  }
+  if (model.drawers.length > rolling) {
     steps.push({
       title: 'Monte e instale as gavetas',
-      detail: `Monte as ${model.drawers.length} caixa(s) de gaveta (4 cantos parafusados), pregue o fundo por baixo, fixe a parte fixa das corrediças nas laterais do vão (niveladas, rentes à frente) e a parte móvel na caixa. Encaixe e fixe as frentes com folga de 3 mm.`,
+      detail: `Monte as ${model.drawers.length - rolling} caixa(s) de gaveta (4 cantos parafusados), pregue o fundo por baixo, fixe a parte fixa das corrediças nas laterais do vão (niveladas, rentes à frente) e a parte móvel na caixa. Encaixe e fixe as frentes com folga de 3 mm.`,
     });
   }
   if (counts.hingeCount) {
@@ -367,7 +388,9 @@ function assemblySteps(
   steps.push({
     title: 'Instale e nivele',
     detail:
-      model.templateId === 'wall-cabinet'
+      model.templateId === 'bed'
+        ? 'Posicione a cama, confira o esquadro medindo as diagonais, aperte as ferragens das laterais e coloque o colchão.'
+        : model.templateId === 'wall-cabinet'
         ? 'Marque a altura na parede com nível, fixe o trilho/suspensores com buchas e pendure o armário; regule até ficar nivelado.'
         : 'Posicione o móvel, nivele (calços ou pés reguláveis) e prenda na parede com as cantoneiras anti-tombamento.',
   });

@@ -3,7 +3,7 @@
  * - "Cômodo e móveis": lista de móveis, colocar móveis (Meus móveis ou modelos), medidas, portas e janelas.
  * - "Móvel": o móvel selecionado — posição no cômodo e editor completo (medidas, vãos, peças), sem sair do ambiente.
  */
-import { Copy, DoorOpen, Home, LayoutGrid, Move, Pencil, Plus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { Copy, DoorOpen, Home, LayoutGrid, Move, Palette, Pencil, Plus, RotateCcw, RotateCw, Sofa, Trash2 } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
 import { useResults } from '@/hooks/ProjectResults';
 import { moveToWall, rotatePlacement, snapPlacement, WALL_LABELS } from '@/engine/roomEngine';
@@ -15,7 +15,9 @@ import { ItemEditorForms, ItemEditorHeader } from '@/components/params/Parameter
 import { MyFurniture } from '@/components/library/MyFurniture';
 import { TEMPLATE_ICONS } from '@/components/layout/ProjectItemsBar';
 import { TEMPLATE_LIST } from '@/engine/templates';
+import { PROP_CATALOG } from '@/engine/propEngine';
 import { FURNITURE_COLORS } from './roomColors';
+import { DEFAULT_FLOOR_COLOR, DEFAULT_WALL_COLOR } from './roomDefaults';
 
 const WALLS: WallSide[] = ['fundo', 'esquerda', 'direita', 'frente'];
 const WALL_SHORT: Record<WallSide, string> = { fundo: 'Fundo', esquerda: 'Esquerda', direita: 'Direita', frente: 'Frente' };
@@ -174,6 +176,7 @@ function RoomSettingsTab() {
   const resetPlacements = useProjectStore((s) => s.resetPlacements);
   const selectPlacement = useProjectStore((s) => s.selectPlacement);
   const addItem = useProjectStore((s) => s.addItem);
+  const addProp = useProjectStore((s) => s.addProp);
   const { placements } = useResults();
 
   return (
@@ -229,6 +232,37 @@ function RoomSettingsTab() {
           </div>
         </div>
         <p className="text-[11px] leading-snug text-subtle">O móvel novo vai para um lugar livre junto às paredes e já fica selecionado para você ajustar.</p>
+      </Section>
+      <Section title="Objetos do ambiente" icon={<Sofa />} defaultOpen={false}>
+        <div className="grid grid-cols-2 gap-1.5">
+          {PROP_CATALOG.map((prop) => (
+            <Button key={prop.type} variant="outline" size="sm" className="justify-start" onClick={() => addProp(prop.type)}>
+              <span className="size-3 shrink-0 rounded-sm border border-black/15" style={{ background: prop.color }} />
+              <span className="truncate">{prop.label}</span>
+            </Button>
+          ))}
+        </div>
+        <p className="text-[11px] leading-snug text-subtle">Eletrodomésticos, sofá, mesa, TV... Só compõem o cômodo e as imagens: não entram no plano de corte, nas compras nem no orçamento.</p>
+      </Section>
+      <Section title="Cores do cômodo" icon={<Palette />} defaultOpen={false}>
+        <FieldRow label="Paredes">
+          <input type="color" aria-label="Cor das paredes" value={room.wallColor ?? DEFAULT_WALL_COLOR} onChange={(e) => setRoom({ wallColor: e.target.value })} className="h-8 w-14 cursor-pointer rounded border border-border bg-surface" />
+        </FieldRow>
+        <FieldRow label="Piso">
+          <input type="color" aria-label="Cor do piso" value={room.floorColor ?? DEFAULT_FLOOR_COLOR} onChange={(e) => setRoom({ floorColor: e.target.value })} className="h-8 w-14 cursor-pointer rounded border border-border bg-surface" />
+        </FieldRow>
+        <div className="flex flex-wrap gap-1">
+          {[
+            ['Madeira', '#c9a77c'],
+            ['Porcelanato', '#d9d6cf'],
+            ['Cimento', '#9d9b96'],
+            ['Escuro', '#6b4e36'],
+          ].map(([label, color]) => (
+            <Button key={label} variant="ghost" size="sm" className="px-2 text-[11px]" onClick={() => setRoom({ floorColor: color })}>
+              <span className="size-3 rounded-sm border border-black/15" style={{ background: color }} /> {label}
+            </Button>
+          ))}
+        </div>
       </Section>
       <Section title="Medidas do cômodo" icon={<Home />} defaultOpen={false}>
         <SliderField label="Largura (parede do fundo)" value={room.width} min={1000} max={12000} step={50} onChange={(width) => setRoom({ width })} />

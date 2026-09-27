@@ -2,12 +2,13 @@
  * Painel lateral de parâmetros: dimensões, chapas, base, fundo, frentes, montagem, vãos,
  * materiais e configuração da chapa para o plano de corte.
  */
-import { BookmarkCheck, BookmarkPlus, Box, Columns3, Hammer, Layers, PanelBottom, RotateCcw, Ruler, Scissors, SquareStack } from 'lucide-react';
+import { BedDouble, BookmarkCheck, BookmarkPlus, Box, Columns3, Sofa, Hammer, Layers, PanelBottom, RotateCcw, Ruler, Scissors, SquareStack } from 'lucide-react';
 import { useProjectStore, useActiveItem } from '@/store/projectStore';
-import { TEMPLATES } from '@/engine/templates';
+import { isCarcassItem, isWorkbenchItem, MATTRESS_SIZES, TEMPLATES } from '@/engine/templates';
+import { propInfo } from '@/engine/propEngine';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import type { AssemblyMethod, CabinetParams, MaterialRole, TemplateId, WorkbenchParams } from '@/types/woodcraft';
+import type { AssemblyMethod, BedParams, CabinetParams, MaterialRole, PropParams, TemplateId, WorkbenchParams } from '@/types/woodcraft';
 import { FieldRow, NumberInput, Section, Segmented, SliderField, Stepper, ThicknessPicker } from './fields';
 import { ColumnEditor } from './ColumnEditor';
 import { CustomPanelEditor } from './CustomPanelEditor';
@@ -116,9 +117,9 @@ function CabinetForm({ params, templateId }: { params: CabinetParams; templateId
   );
 }
 
-function WorkbenchForm({ params: p }: { params: WorkbenchParams }) {
+function WorkbenchForm({ params: p, templateId }: { params: WorkbenchParams; templateId: TemplateId }) {
   const update = useProjectStore((s) => s.updateWorkbench);
-  const limits = TEMPLATES.workbench.limits;
+  const limits = TEMPLATES[templateId].limits;
   return (
     <>
       <Section title="Dimensões externas" icon={<Ruler />} mobileOpen>
@@ -140,6 +141,24 @@ function WorkbenchForm({ params: p }: { params: WorkbenchParams }) {
         </FieldRow>
         {p.lowerShelf && (
           <SliderField label="Altura da prateleira" value={p.lowerShelfHeight} min={50} max={500} step={10} onChange={(lowerShelfHeight) => update({ lowerShelfHeight })} />
+        )}
+        <FieldRow label="Gaveteiro">
+          <Segmented
+            aria-label="Gaveteiro"
+            value={p.pedestal ?? 'none'}
+            onChange={(pedestal) => update({ pedestal })}
+            options={[
+              { value: 'none', label: 'Sem' },
+              { value: 'left', label: 'Esquerda' },
+              { value: 'right', label: 'Direita' },
+            ]}
+          />
+        </FieldRow>
+        {(p.pedestal ?? 'none') !== 'none' && (
+          <>
+            <SliderField label="Gavetas" value={p.pedestalDrawers ?? 3} min={1} max={6} step={1} unit="" onChange={(pedestalDrawers) => update({ pedestalDrawers })} />
+            <SliderField label="Largura do gaveteiro" value={p.pedestalWidth ?? 400} min={250} max={800} step={10} onChange={(pedestalWidth) => update({ pedestalWidth })} />
+          </>
         )}
         <FieldRow label="Montagem">
           <Segmented aria-label="Montagem" value={p.assembly} onChange={(assembly) => update({ assembly })} options={ASSEMBLY_OPTIONS} />
@@ -163,7 +182,7 @@ function MaterialsForm() {
   const setMaterial = useProjectStore((s) => s.setMaterial);
   const services = useProjectStore((s) => s.services);
   const setServices = useProjectStore((s) => s.setServices);
-  const onlyWorkbenches = useProjectStore((s) => s.items.every((i) => i.templateId === 'workbench'));
+  const onlyWorkbenches = useProjectStore((s) => s.items.every((i) => !isCarcassItem(i) && i.templateId !== 'custom'));
   const roles: MaterialRole[] = onlyWorkbenches ? ['carcass'] : ['carcass', 'front', 'back', 'drawer'];
 
   return (
@@ -284,16 +303,117 @@ export function ItemEditorHeader() {
   );
 }
 
+function BedForm({ params: p }: { params: BedParams }) {
+  const update = useProjectStore((s) => s.updateBed);
+  const current = MATTRESS_SIZES.find((m) => m.width === p.mattressWidth && m.length === p.mattressLength)?.label ?? 'custom';
+  return (
+    <>
+      <Section title="Colchão" icon={<BedDouble />} mobileOpen>
+        <FieldRow label="Tamanho">
+          <select
+            value={current}
+            onChange={(e) => {
+              const m = MATTRESS_SIZES.find((x) => x.label === e.target.value);
+              if (m) update({ mattressWidth: m.width, mattressLength: m.length });
+            }}
+            aria-label="Tamanho do colchão"
+            className="h-8 rounded-md border border-border bg-surface px-2 text-sm"
+          >
+            {MATTRESS_SIZES.map((m) => (
+              <option key={m.label} value={m.label}>
+                {m.label} ({m.width / 10} × {m.length / 10} cm)
+              </option>
+            ))}
+            <option value="custom">Personalizado</option>
+          </select>
+        </FieldRow>
+        <SliderField label="Largura do colchão" value={p.mattressWidth} min={700} max={2100} step={10} onChange={(mattressWidth) => update({ mattressWidth })} />
+        <SliderField label="Comprimento do colchão" value={p.mattressLength} min={1700} max={2200} step={10} onChange={(mattressLength) => update({ mattressLength })} />
+        <SliderField label="Altura do colchão" value={p.mattressHeight} min={100} max={450} step={10} onChange={(mattressHeight) => update({ mattressHeight })} />
+      </Section>
+      <Section title="Estrutura" icon={<Layers />} mobileOpen>
+        <SliderField label="Altura do estrado (do piso)" value={p.deckHeight} min={150} max={600} step={10} onChange={(deckHeight) => update({ deckHeight })} />
+        <SliderField label="Altura das laterais" value={p.railHeight} min={120} max={400} step={10} onChange={(railHeight) => update({ railHeight })} />
+        <SliderField label="Altura da cabeceira" value={p.headboardHeight} min={400} max={1500} step={10} onChange={(headboardHeight) => update({ headboardHeight })} />
+        <FieldRow label="Peseira alta">
+          <Switch checked={p.footboard} onCheckedChange={(footboard) => update({ footboard })} aria-label="Peseira alta" />
+        </FieldRow>
+        {p.footboard && (
+          <SliderField label="Altura da peseira" value={p.footboardHeight} min={300} max={900} step={10} onChange={(footboardHeight) => update({ footboardHeight })} />
+        )}
+        <FieldRow label="Estrado">
+          <Segmented
+            aria-label="Estrado"
+            value={p.deck}
+            onChange={(deck) => update({ deck })}
+            options={[
+              { value: 'ripas', label: 'Ripas' },
+              { value: 'chapa', label: 'Chapa' },
+            ]}
+          />
+        </FieldRow>
+        <FieldRow label="Gavetões sob a cama">
+          <Segmented
+            aria-label="Gavetões por lado"
+            value={String(p.drawersPerSide ?? 0)}
+            onChange={(v) => update({ drawersPerSide: Number(v) })}
+            options={[
+              { value: '0', label: 'Sem' },
+              { value: '1', label: '1' },
+              { value: '2', label: '2' },
+              { value: '3', label: '3' },
+            ]}
+          />
+        </FieldRow>
+        {(p.drawersPerSide ?? 0) > 0 && (
+          <FieldRow label="Lado" hint="Gavetões com rodízios, logo abaixo das laterais. Estrado mais alto = gavetas mais fundas.">
+            <Segmented
+              aria-label="Lado dos gavetões"
+              value={p.drawerSides ?? 'ambos'}
+              onChange={(drawerSides) => update({ drawerSides })}
+              options={[
+                { value: 'ambos', label: 'Ambos' },
+                { value: 'esquerda', label: 'Esq.' },
+                { value: 'direita', label: 'Dir.' },
+              ]}
+            />
+          </FieldRow>
+        )}
+        <FieldRow label="Chapa">
+          <ThicknessPicker value={p.thickness} presets={[15, 18, 25]} onChange={(thickness) => update({ thickness })} />
+        </FieldRow>
+        <FieldRow label="Montagem">
+          <Segmented aria-label="Montagem" value={p.assembly} onChange={(assembly) => update({ assembly })} options={ASSEMBLY_OPTIONS} />
+        </FieldRow>
+      </Section>
+    </>
+  );
+}
+
+function PropForm({ params: p }: { params: PropParams }) {
+  const update = useProjectStore((s) => s.updateProp);
+  const info = propInfo(p.type);
+  return (
+    <Section title={info.label} icon={<Sofa />} mobileOpen>
+      <p className="text-[11px] leading-snug text-subtle">Objeto só para compor o ambiente e as imagens: não entra na lista de corte, nas compras nem no orçamento.</p>
+      <SliderField label="Largura" value={p.width} min={100} max={4000} step={10} onChange={(width) => update({ width })} />
+      <SliderField label="Altura" value={p.height} min={5} max={2500} step={5} onChange={(height) => update({ height })} />
+      <SliderField label="Profundidade" value={p.depth} min={20} max={4000} step={10} onChange={(depth) => update({ depth })} />
+      <FieldRow label="Cor">
+        <input type="color" value={p.color} onChange={(e) => update({ color: e.target.value })} aria-label="Cor do objeto" className="h-8 w-14 cursor-pointer rounded border border-border bg-surface" />
+      </FieldRow>
+    </Section>
+  );
+}
+
 /** Formulário de medidas e peças do móvel ativo (varia conforme o tipo). */
 export function ItemEditorForms() {
   const item = useActiveItem();
-  return item.templateId === 'workbench' ? (
-    <WorkbenchForm key={item.id} params={item.params} />
-  ) : item.templateId === 'custom' ? (
-    <CustomPanelEditor key={item.id} params={item.params} itemId={item.id} />
-  ) : (
-    <CabinetForm key={item.id} params={item.params} templateId={item.templateId} />
-  );
+  if (isWorkbenchItem(item)) return <WorkbenchForm key={item.id} params={item.params} templateId={item.templateId} />;
+  if (item.templateId === 'custom') return <CustomPanelEditor key={item.id} params={item.params} itemId={item.id} />;
+  if (item.templateId === 'bed') return <BedForm key={item.id} params={item.params} />;
+  if (item.templateId === 'prop') return <PropForm key={item.id} params={item.params} />;
+  return <CabinetForm key={item.id} params={item.params} templateId={item.templateId} />;
 }
 
 export function ParameterPanel() {

@@ -18,6 +18,37 @@ interface Props {
   onSelect?: (key: string | null) => void;
   drag?: RoomDrag;
   className?: string;
+  /** Modo de escolha do ponto de vista: cada clique na planta devolve um ponto (mm). */
+  picking?: boolean;
+  onPick?: (point: { x: number; z: number }) => void;
+  /** Câmera do ponto de vista atual (posição e para onde olha). */
+  camera?: { from: { x: number; z: number }; to?: { x: number; z: number }; fov?: number } | null;
+}
+
+/** Cone de visão da câmera na planta. */
+function CameraMarker({ from, to, fov = 60, r }: { from: { x: number; z: number }; to?: { x: number; z: number }; fov?: number; r: number }) {
+  const ang = to ? Math.atan2(to.z - from.z, to.x - from.x) : null;
+  const len = r * 6;
+  const half = ((fov / 2) * Math.PI) / 180;
+  return (
+    <g pointerEvents="none" data-testid="camera-marker">
+      {ang !== null && (
+        <>
+          <path
+            d={`M ${from.x} ${from.z} L ${from.x + Math.cos(ang - half) * len} ${from.z + Math.sin(ang - half) * len} L ${from.x + Math.cos(ang + half) * len} ${from.z + Math.sin(ang + half) * len} Z`}
+            fill="#0f766e"
+            fillOpacity={0.18}
+            stroke="#0f766e"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line x1={from.x} y1={from.z} x2={to!.x} y2={to!.z} stroke="#0f766e" strokeDasharray="6 5" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+          <circle cx={to!.x} cy={to!.z} r={r * 0.45} fill="#0f766e" />
+        </>
+      )}
+      <circle cx={from.x} cy={from.z} r={r} fill="#0f766e" stroke="#fff" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+    </g>
+  );
 }
 
 /** Retângulo da abertura na espessura da parede. */
@@ -65,7 +96,7 @@ function frontLine(p: ResolvedPlacement) {
   }
 }
 
-export function RoomPlan2D({ room, placements, selected, onSelect, drag, className }: Props) {
+export function RoomPlan2D({ room, placements, selected, onSelect, drag, className, picking, onPick, camera }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const justDragged = useRef(false);
   const pad = WALL + Math.max(room.width, room.depth) * 0.05;
@@ -165,6 +196,25 @@ export function RoomPlan2D({ room, placements, selected, onSelect, drag, classNa
           </g>
         );
       })}
+
+      {camera && <CameraMarker from={camera.from} to={camera.to} fov={camera.fov} r={font * 0.45} />}
+      {picking && (
+        <rect
+          data-testid="pick-overlay"
+          x={-pad}
+          y={-pad}
+          width={room.width + 2 * pad}
+          height={room.depth + 2 * pad}
+          fill="#0f766e"
+          fillOpacity={0.04}
+          style={{ cursor: 'crosshair' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            const pt = toMm(e);
+            if (pt) onPick?.({ x: Math.round(Math.max(0, Math.min(room.width, pt.x))), z: Math.round(Math.max(0, Math.min(room.depth, pt.z))) });
+          }}
+        />
+      )}
 
       {/* Cotas do cômodo */}
       <g fill="#1f1a14" fontSize={font} textAnchor="middle">

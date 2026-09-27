@@ -240,7 +240,26 @@ export function computeHardware(
 
   // --- Corrediças --------------------------------------------------------------------
   const bySlide = new Map<number, number>();
-  for (const d of model.drawers) bySlide.set(d.slideLength, (bySlide.get(d.slideLength) ?? 0) + 1);
+  const rolling = model.drawers.filter((d) => d.runner === 'rodizio');
+  for (const d of model.drawers) if (d.runner !== 'rodizio') bySlide.set(d.slideLength, (bySlide.get(d.slideLength) ?? 0) + 1);
+  if (rolling.length) {
+    items.add({
+      category: 'ferragem',
+      name: 'Rodízio para gavetão',
+      specification: 'Rodízio de 35–40 mm com placa, sem freio, para piso',
+      quantity: rolling.length * 4,
+      unit: 'un',
+      application: `${rolling.length} gavetão(ões), 4 por gavetão`,
+    });
+    items.add({
+      category: 'fixacao',
+      name: 'Parafuso chipboard cabeça panela',
+      specification: '3,5 × 16 mm',
+      quantity: withSpare(rolling.length * 16),
+      unit: 'un',
+      application: 'Fixação dos rodízios (4 por rodízio)',
+    });
+  }
   for (const [length, qty] of bySlide) {
     items.add({
       category: 'ferragem',
@@ -268,7 +287,7 @@ export function computeHardware(
     });
   }
 
-  const slidePairs = model.drawers.length;
+  const slidePairs = model.drawers.length - rolling.length;
   const smallScrews = hingeCount * 4 + slidePairs * 12;
   items.add({
     category: 'fixacao',
@@ -346,7 +365,7 @@ export function computeHardware(
       application: 'Trilho/suspensores na parede',
     });
   }
-  if (model.templateId === 'wardrobe' || model.templateId === 'base-cabinet') {
+  if (['wardrobe', 'base-cabinet', 'bookshelf', 'dresser'].includes(model.templateId)) {
     items.add({
       category: 'ferragem',
       name: 'Cantoneira L',
@@ -413,6 +432,29 @@ export function computeHardware(
       unit: 'un',
       application: 'Pés da mesa',
     });
+  }
+
+  // --- Cama: ferragens de encaixe e sarrafos ------------------------------------------
+  if (model.templateId === 'bed') {
+    items.add({
+      category: 'ferragem',
+      name: 'Ferragem de encaixe para cama',
+      specification: 'Par macho/fêmea para lateral × cabeceira/peseira',
+      quantity: 4,
+      unit: 'par',
+      application: 'Laterais encaixam e desencaixam sem ferramenta (facilita montar e mudar)',
+    });
+    const cleat = model.pieces.find((p) => p.role === 'cleat');
+    if (cleat) {
+      items.add({
+        category: 'fixacao',
+        name: 'Parafuso chipboard cabeça chata',
+        specification: '4,0 × 30 mm',
+        quantity: withSpare(cleat.quantity * Math.ceil(cleat.length / 200)),
+        unit: 'un',
+        application: 'Sarrafos do estrado nas laterais (1 a cada 200 mm, com cola)',
+      });
+    }
   }
 
   // --- Consumíveis (fita de borda, lixa) ------------------------------------------------

@@ -6,6 +6,8 @@
  * arquivos antigos ou editados à mão não quebrem o app.
  */
 import type {
+  BedParams,
+  PropParams,
   FurniturePlacement,
   RoomSettings,
   Rotation,
@@ -22,7 +24,8 @@ import type {
   WorkbenchParams,
 } from '@/types/woodcraft';
 import { DEFAULT_PRICES } from './budgetEngine';
-import { defaultParamsFor, makeColumn, TEMPLATES } from './templates';
+import { defaultItemParams, defaultParamsFor, isCarcassId, isWorkbenchId, makeColumn, TEMPLATES } from './templates';
+import { PROP_CATALOG, propInfo } from './propEngine';
 import { newPanelId } from './customEngine';
 import { DEFAULT_ROOM, newOpeningId } from './roomEngine';
 
@@ -66,14 +69,7 @@ export const newItemId = () => `m${Date.now().toString(36)}${(itemSeq++).toStrin
 /** Cria um novo móvel a partir de um template. */
 export function createItem(templateId: TemplateId, name?: string): ProjectItem {
   const base = { id: newItemId(), name: name ?? TEMPLATES[templateId].name, quantity: 1 };
-  switch (templateId) {
-    case 'workbench':
-      return { ...base, templateId, params: defaultParamsFor('workbench') };
-    case 'custom':
-      return { ...base, templateId, params: defaultParamsFor('custom') };
-    default:
-      return { ...base, templateId, params: defaultParamsFor(templateId) };
-  }
+  return { ...base, ...defaultItemParams(templateId) } as ProjectItem;
 }
 
 export function serializeProject(data: ProjectData): string {
@@ -163,8 +159,23 @@ export function parseItem(raw: unknown): ProjectItem | null {
     name: strOr(raw.name, TEMPLATES[templateId].name),
     quantity: Math.max(1, Math.floor(numOr(raw.quantity, 1))),
   };
-  if (templateId === 'workbench') {
-    const params = mergeKnown<WorkbenchParams>(defaultParamsFor('workbench'), raw.params);
+  if (templateId === 'bed') {
+    const params = mergeKnown<BedParams>(defaultParamsFor('bed'), raw.params);
+    if (!['ripas', 'chapa'].includes(params.deck)) params.deck = 'ripas';
+    if (!['ambos', 'esquerda', 'direita'].includes(params.drawerSides ?? '')) params.drawerSides = 'ambos';
+    params.drawersPerSide = Math.max(0, Math.min(3, Math.round(params.drawersPerSide ?? 0)));
+    if (!['screw', 'minifix', 'dowel'].includes(params.assembly)) params.assembly = 'screw';
+    return { ...base, templateId, params };
+  }
+  if (templateId === 'prop') {
+    const params = mergeKnown<PropParams>(defaultParamsFor('prop'), raw.params);
+    if (!PROP_CATALOG.some((c) => c.type === params.type)) params.type = 'geladeira';
+    if (!/^#[0-9a-f]{6}$/i.test(params.color)) params.color = propInfo(params.type).color;
+    return { ...base, templateId, params };
+  }
+  if (isWorkbenchId(templateId)) {
+    const params = mergeKnown<WorkbenchParams>(defaultParamsFor(templateId), raw.params);
+    if (!['none', 'left', 'right'].includes(params.pedestal ?? '')) params.pedestal = 'none';
     if (!['screw', 'minifix', 'dowel'].includes(params.assembly)) params.assembly = 'screw';
     return { ...base, templateId, params };
   }
@@ -180,6 +191,7 @@ export function parseItem(raw: unknown): ProjectItem | null {
       },
     };
   }
+  if (!isCarcassId(templateId)) return null;
   const defaults = defaultParamsFor(templateId);
   const params = mergeKnown<CabinetParams>(defaults, raw.params);
   for (const [key, allowed] of Object.entries(ENUMS) as Array<[keyof CabinetParams, readonly string[]]>) {
@@ -226,6 +238,12 @@ function parseRoom(raw: unknown): RoomSettings {
       height: Math.max(100, numOr(o.height, 2100)),
       sill: Math.max(0, numOr(o.sill, 0)),
     }));
+  }
+  if (isObj(raw)) {
+    for (const key of ['wallColor', 'floorColor'] as const) {
+      const c = raw[key];
+      if (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) room[key] = c;
+    }
   }
   return room;
 }

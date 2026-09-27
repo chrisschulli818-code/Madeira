@@ -1,11 +1,39 @@
-import type { CabinetParams, CustomParams, TemplateId, WorkbenchParams } from '@/types/woodcraft';
+import type { BedParams, CabinetParams, CustomParams, ProjectItem, PropParams, TemplateId, WorkbenchParams } from '@/types/woodcraft';
+import { propInfo } from '@/engine/propEngine';
+import { buildBed } from '@/engine/bedEngine';
 import { buildCustom, PANEL_KIND_LABELS } from '@/engine/customEngine';
 
 const ASSEMBLY = { screw: 'Parafuso direto', minifix: 'Minifix + cavilhas', dowel: 'Cavilhas coladas' } as const;
 const BASE = { plinth: 'Rodapé recuado', feet: 'Pés reguláveis', none: 'Suspenso / sem rodapé' } as const;
 
 /** Especificações gerais em formato "rótulo → valor" para o relatório. */
-export function describeParams(templateId: TemplateId, params: CabinetParams | WorkbenchParams | CustomParams): Array<[string, string]> {
+export function describeParams(templateId: TemplateId, params: ProjectItem['params']): Array<[string, string]> {
+  if (templateId === 'prop') {
+    const p = params as PropParams;
+    return [
+      ['Objeto', propInfo(p.type).label],
+      ['Medidas (L × A × P)', `${p.width} × ${p.height} × ${p.depth} mm`],
+      ['Produção', 'Não — objeto só para compor o ambiente'],
+    ];
+  }
+  if (templateId === 'bed') {
+    const p = params as BedParams;
+    const { overall } = buildBed(p);
+    return [
+      ['Dimensões externas (L × A × P)', `${overall.width} × ${overall.height} × ${overall.depth} mm`],
+      ['Colchão', `${p.mattressWidth} × ${p.mattressLength} × ${p.mattressHeight} mm`],
+      ['Estrado', `${p.deck === 'ripas' ? 'Ripas de 70 mm' : 'Chapa inteira'}, a ${p.deckHeight} mm do piso`],
+      [
+        'Gavetões',
+        (p.drawersPerSide ?? 0) > 0
+          ? `${p.drawersPerSide} por lado (${p.drawerSides === 'esquerda' ? 'lado esquerdo' : p.drawerSides === 'direita' ? 'lado direito' : 'os dois lados'}), com rodízios`
+          : 'não',
+      ],
+      ['Cabeceira / peseira', `${p.headboardHeight} mm / ${p.footboard ? `${p.footboardHeight} mm` : 'baixa'}`],
+      ['Chapa', `${p.thickness} mm`],
+      ['Montagem', `${ASSEMBLY[p.assembly]} + ferragens de encaixe nas laterais`],
+    ];
+  }
   if (templateId === 'custom') {
     const p = params as CustomParams;
     const { overall, joints } = buildCustom(p);
@@ -20,13 +48,19 @@ export function describeParams(templateId: TemplateId, params: CabinetParams | W
   }
   const q = params as CabinetParams | WorkbenchParams;
   const dims: [string, string] = ['Dimensões externas (L × A × P)', `${q.width} × ${q.height} × ${q.depth} mm`];
-  if (templateId === 'workbench') {
+  if (templateId === 'workbench' || templateId === 'desk') {
     const p = params as WorkbenchParams;
     return [
       dims,
       ['Tampo', `${p.topThickness} mm, balanço de ${p.sideOverhang} mm`],
       ['Painéis laterais / saia', `${p.panelThickness} mm, saia de ${p.apronHeight} mm`],
       ['Prateleira inferior', p.lowerShelf ? `a ${p.lowerShelfHeight} mm do piso` : 'não'],
+      [
+        'Gaveteiro',
+        (p.pedestal ?? 'none') === 'none'
+          ? 'não'
+          : `${p.pedestalDrawers ?? 3} gaveta(s) à ${p.pedestal === 'left' ? 'esquerda' : 'direita'}, ${p.pedestalWidth ?? 400} mm de largura`,
+      ],
       ['Montagem', ASSEMBLY[p.assembly]],
     ];
   }
