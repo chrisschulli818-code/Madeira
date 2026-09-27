@@ -19,6 +19,7 @@
 import { jsPDF } from 'jspdf';
 import { autoTable, type UserOptions } from 'jspdf-autotable';
 import type {
+  Annotation,
   CutPiece,
   MachiningOp,
   AssembledModel,
@@ -42,6 +43,7 @@ import { edgeBandWidthFor, hingesForDoorHeight } from '@/engine/hardwareEngine';
 import { MATERIAL_COLORS } from '@/lib/pieceColors';
 import { computeJoinery, instanceLetter, MACHINING_COLORS, MACHINING_LABELS, opsByPiece } from '@/engine/joineryEngine';
 import { moduleConnections } from '@/engine/roomEngine';
+import { distanceMm } from '@/engine/motionEngine';
 
 /** Um móvel do projeto, com suas especificações e o modelo calculado. */
 export interface PdfItem {
@@ -50,6 +52,8 @@ export interface PdfItem {
   quantity: number;
   specs: Array<[string, string]>;
   model: AssembledModel;
+  /** Marcações (notas e medidas) feitas sobre o móvel. */
+  notes?: Annotation[];
 }
 
 export interface PdfReportData {
@@ -223,7 +227,7 @@ function drawElevation(
   model: AssembledModel,
   view: View,
   area: { x: number; y: number; w: number; h: number },
-  opts: { showFronts: boolean; title: string },
+  opts: { showFronts: boolean; title: string; notes?: Annotation[] },
 ) {
   const { width: W, height: H, depth: D } = model.overall;
   const tf = model.pieces.find((p) => FRONT_ROLES.has(p.role))?.thickness ?? 0;
@@ -273,6 +277,34 @@ function drawElevation(
   if (view === 'side') {
     dimension(doc, X(0), Y(H), X(model.layout.internalDepth), Y(H), -4.5, `útil ${mm(model.layout.internalDepth)}`, 6.5);
   }
+  // Marcações: notas numeradas (vermelho) e medidas (azul).
+  let n = 0;
+  for (const a of opts.notes ?? []) {
+    const u = (p: { x: number; z: number }) => X(view === 'front' ? p.x : p.z);
+    if (a.kind === 'medida' && a.b) {
+      doc.setDrawColor(29, 78, 216);
+      doc.setLineWidth(0.35);
+      doc.line(u(a.a), Y(a.a.y), u(a.b), Y(a.b.y));
+      doc.setFillColor(29, 78, 216);
+      doc.circle(u(a.a), Y(a.a.y), 0.6, 'F');
+      doc.circle(u(a.b), Y(a.b.y), 0.6, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(29, 78, 216);
+      doc.text(mm(distanceMm(a.a, a.b)), (u(a.a) + u(a.b)) / 2, (Y(a.a.y) + Y(a.b.y)) / 2 - 1, { align: 'center' });
+      continue;
+    }
+    n++;
+    doc.setFillColor(190, 18, 60);
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.3);
+    doc.circle(u(a.a), Y(a.a.y), 2, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text(String(n), u(a.a), Y(a.a.y) + 0.8, { align: 'center' });
+  }
+  doc.setTextColor(...INK);
 }
 
 /** Desenho de uma chapa com as peças numeradas. */
@@ -501,7 +533,7 @@ function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: nu
   const half = (CONTENT_W - 6) / 2;
   const hasFronts = model.pieces.some((p) => FRONT_ROLES.has(p.role));
   w.ensure(95);
-  drawElevation(doc, model, 'front', { x: M, y: w.y, w: half, h: 92 }, { showFronts: true, title: 'Vista frontal' });
+  drawElevation(doc, model, 'front', { x: M, y: w.y, w: half, h: 92 }, { showFronts: true, title: 'Vista frontal', notes: item.notes });
   drawElevation(doc, model, hasFronts ? 'front' : 'side', { x: M + half + 6, y: w.y, w: half, h: 92 }, {
     showFronts: false,
     title: hasFronts ? 'Vista frontal interna (sem frentes)' : 'Vista lateral',
@@ -535,6 +567,22 @@ function writeItem(w: Writer, n: number, item: PdfItem, index: number, total: nu
   });
   const tableEnd = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? blockTop;
   w.y = Math.max(tableEnd, hasFronts ? blockTop + 88 : tableEnd) + 4;
+
+  if (item.notes?.length) {
+    w.subtitle('Marcações');
+    let n = 0;
+    w.table({
+      head: [['#', 'Tipo', 'Anotação', 'Onde (X / Y / Z, mm)']],
+      body: item.notes.map((a) => {
+        const at = (p: { x: number; y: number; z: number }) => `${Math.round(p.x)} / ${Math.round(p.y)} / ${Math.round(p.z)}`;
+        if (a.kind === 'medida' && a.b) return ['—', `Medida: ${mm(distanceMm(a.a, a.b))}`, a.text || '—', `${at(a.a)} até ${at(a.b)}`];
+        n++;
+        return [String(n), 'Nota', a.text || '—', at(a.a)];
+      }),
+      columnStyles: { 0: { cellWidth: 8, halign: 'right' }, 1: { cellWidth: 36 } },
+    });
+    w.paragraph('X = da esquerda, Y = do piso, Z = do fundo para a frente. Os números das notas aparecem na vista frontal.', 7.5);
+  }
 
   if (model.doors.length) {
     w.subtitle('Portas');

@@ -35,6 +35,7 @@ export function useExportPdf() {
           quantity: item.quantity,
           specs: describeParams(item.templateId, item.params),
           model,
+          notes: item.notes,
         })),
       });
       doc.save(`${slugify(projectName)}-projeto.pdf`);

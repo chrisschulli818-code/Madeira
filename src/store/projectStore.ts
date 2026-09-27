@@ -10,6 +10,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
+  Annotation,
   BedParams,
   PropParams,
   PropType,
@@ -113,6 +114,12 @@ export interface ProjectState extends ProjectData {
   removeColumn: (columnId: string) => void;
   updateWorkbench: (patch: Partial<WorkbenchParams>) => void;
   updateBed: (patch: Partial<BedParams>) => void;
+  // Marcações do móvel ativo
+  /** Cria uma marcação (nota ou medida) no móvel ativo e devolve o id. */
+  addAnnotation: (a: Omit<Annotation, 'id'>) => string;
+  updateAnnotation: (id: string, patch: Partial<Omit<Annotation, 'id'>>) => void;
+  removeAnnotation: (id: string) => void;
+  clearAnnotations: () => void;
   updateProp: (patch: Partial<PropParams>) => void;
   /** Coloca um objeto do ambiente (geladeira, sofá...) no projeto; devolve o id. */
   addProp: (type: PropType) => string;
@@ -324,6 +331,14 @@ export const useProjectStore = create<ProjectState>()(
         removeColumn: (columnId) =>
           patchCabinet((p) => (p.columns.length <= 1 ? p : { ...p, columns: p.columns.filter((c) => c.id !== columnId) })),
         updateWorkbench: (patch) => patchActive((i) => (isWorkbenchItem(i) ? { ...i, params: { ...i.params, ...patch } } : i)),
+        addAnnotation: (a) => {
+          const id = `mk${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+          patchActive((i) => ({ ...i, notes: [...(i.notes ?? []), { ...a, id }] }));
+          return id;
+        },
+        updateAnnotation: (id, patch) => patchActive((i) => ({ ...i, notes: (i.notes ?? []).map((n) => (n.id === id ? { ...n, ...patch } : n)) })),
+        removeAnnotation: (id) => patchActive((i) => ({ ...i, notes: (i.notes ?? []).filter((n) => n.id !== id) })),
+        clearAnnotations: () => patchActive((i) => ({ ...i, notes: [] })),
         updateBed: (patch) => patchActive((i) => (i.templateId === 'bed' ? { ...i, params: { ...i.params, ...patch } } : i)),
         updateProp: (patch) => patchActive((i) => (i.templateId === 'prop' ? { ...i, params: { ...i.params, ...patch } } : i)),
         addProp: (type) => {

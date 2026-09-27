@@ -502,12 +502,34 @@ export interface ToolRequirement {
 // Projeto com vários móveis
 // ---------------------------------------------------------------------------
 
+/** Ponto no espaço do móvel (mm; X largura, Y altura, Z profundidade, frente em +Z). */
+export interface Point3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
+ * Marcação feita pelo usuário sobre o móvel:
+ * - nota: alfinete com texto num ponto;
+ * - medida: cota entre dois pontos (a distância é calculada).
+ */
+export interface Annotation {
+  id: string;
+  kind: 'nota' | 'medida';
+  text: string;
+  a: Point3;
+  b?: Point3;
+}
+
 interface ProjectItemBase {
   id: string;
   /** Nome dado pelo usuário (ex.: "Balcão da pia"). */
   name: string;
   /** Quantos móveis iguais serão feitos. */
   quantity: number;
+  /** Marcações (notas e medidas) feitas sobre o móvel. */
+  notes?: Annotation[];
 }
 
 /** Um móvel do projeto: template + parâmetros próprios. */
