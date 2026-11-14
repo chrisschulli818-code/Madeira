@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Dropdown, MenuItem } from '@/components/ui/dropdown';
 import { Segmented } from '@/components/params/fields';
 import { cn } from '@/lib/utils';
+import { AiAssistant } from '@/components/ai/AiAssistant';
 import type { TemplateId } from '@/types/woodcraft';
 
 export const TEMPLATE_ICONS: Record<TemplateId, ReactNode> = {
@@ -145,6 +146,7 @@ export function ProjectItemsBar() {
           );
         })}
       </div>
+      <AiAssistant />
       <AddItemMenu />
     </nav>
   );

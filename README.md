@@ -38,6 +38,10 @@ A partir das medidas externas e das opções de construção, gera automaticamen
   dobradiça e as gavetas deslizarem com a caixa (clique numa frente, ou **Abrir tudo**). **Nota** coloca um alfinete
   numerado com texto no ponto clicado e **Medida** mede a distância entre dois pontos (encaixa nos cantos e bordas
   das peças). As marcações ficam salvas no projeto, aparecem nas vistas frontal/lateral e vão para o PDF;
+- **Montar com IA**: descreva o móvel (digitando ou falando, pelo microfone do navegador) com medidas, portas,
+  gavetas, prateleiras… e o app monta: escolhe o modelo, preenche as medidas e os vãos e já gera corte, compras e
+  montagem. Também altera o móvel aberto ("aumenta para 1,20 e coloca mais uma gaveta") e monta vários móveis de uma
+  vez. Usa o Claude no servidor (veja abaixo como ativar); sem chave, usa um leitor simples de texto;
 - **Tela expandida**: esconde cabeçalho e abas e deixa só o editor e o 3D (botão **Expandir**, Esc para sair).
   **Novo → Do zero** já abre o projeto em branco nesse modo.
 
@@ -78,6 +82,19 @@ Cada push na `main` gera um novo deploy automaticamente.
 > Também funciona como **Web Service**: **Build Command** `yarn install && yarn build` e **Start Command** `yarn start`.
 > No Render (variável `RENDER=true`) o `yarn start` serve o build compilado em vez do servidor de desenvolvimento,
 > ficando bem abaixo do limite de 512 MB do plano gratuito.
+
+### Ativar o assistente de IA ("Montar com IA")
+
+O assistente usa o Claude pelo endpoint `/api/montar`, que roda no próprio servidor do app (dev e `yarn start`).
+A chave fica só no servidor:
+
+1. Crie uma chave em [platform.claude.com](https://platform.claude.com) (API Keys).
+2. No Render, use o modo **Web Service** (acima) e, em **Environment**, adicione `ANTHROPIC_API_KEY` com a chave.
+   Localmente: `ANTHROPIC_API_KEY=... yarn start`.
+
+Sem a chave (ou no modo Static Site, que não tem servidor), o botão continua funcionando com o **leitor simples**,
+que entende o tipo de móvel, as medidas e as quantidades de portas, gavetas, prateleiras e vãos. O endpoint aceita
+até 30 pedidos por hora por IP, para a chave não ser usada à toa.
 
 ## Stack
 

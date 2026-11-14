@@ -3,9 +3,11 @@ import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { aiPlugin } from './server/aiPlugin';
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // aiPlugin: endpoint /api/montar do assistente de IA (chave em ANTHROPIC_API_KEY, só no servidor).
+  plugins: [react(), tailwindcss(), aiPlugin()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },

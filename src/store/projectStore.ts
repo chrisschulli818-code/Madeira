@@ -97,6 +97,8 @@ export interface ProjectState extends ProjectData {
   addToLibrary: (items: ProjectItem[]) => number;
   /** Coloca cópias de móveis (da biblioteca ou de um arquivo) no projeto; devolve os novos ids. */
   insertItems: (items: ProjectItem[]) => string[];
+  /** Troca o modelo e as medidas do móvel ativo (mantém id e marcações). */
+  replaceActiveItem: (item: ProjectItem) => void;
 
   setProjectName: (name: string) => void;
   // Móveis
@@ -250,6 +252,8 @@ export const useProjectStore = create<ProjectState>()(
           set((s) => ({ library: [...entries, ...s.library] }));
           return entries.length;
         },
+        replaceActiveItem: (next) =>
+          patchActive((i) => ({ ...structuredClone(next), id: i.id, notes: i.notes }) as ProjectItem),
         insertItems: (source) => {
           const ids: string[] = [];
           set((s) => {
