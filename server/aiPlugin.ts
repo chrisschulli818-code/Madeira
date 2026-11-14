@@ -14,6 +14,8 @@ import { z } from 'zod';
 import { AiPlan } from '../src/engine/aiSchema';
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
+/** Se o modelo padrão não existir na conta, tenta o apelido do Flash mais recente. */
+const FALLBACK_MODEL = 'gemini-flash-latest';
 const MAX_TEXT = 2000;
 /** Pedidos por IP por hora (o endpoint é público no Render). */
 const RATE_LIMIT = 30;
@@ -98,51 +100,98 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (!texto) return send(res, 400, { erro: 'Descreva o móvel.' });
 
   if (!client || clientKey !== key) {
-    client = new GoogleGenAI({ apiKey: key });
+    // GEMINI_BASE_URL: só para testes ou proxy; normalmente fica vazio.
+    const baseUrl = process.env.GEMINI_BASE_URL;
+    client = new GoogleGenAI({ apiKey: key, ...(baseUrl && { httpOptions: { baseUrl } }) });
     clientKey = key;
   }
-  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
-  try {
-    const response = await client.models.generateContent({
-      model,
-      contents: `${atual ? `<movel_atual>\n${atual}\n</movel_atual>\n\n` : ''}<pedido>\n${texto}\n</pedido>`,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: 'application/json',
-        responseJsonSchema: RESPONSE_SCHEMA,
-      },
-    });
-    const text = response.text;
-    if (!text) {
-      // Sem texto: bloqueado pelos filtros de segurança ou resposta vazia.
-      return send(res, 422, { erro: 'O assistente não pôde atender a esse pedido. Tente descrever só o móvel e as medidas.' });
-    }
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return send(res, 502, { erro: 'A resposta veio incompleta. Tente um pedido mais curto.' });
-    }
-    const plano = AiPlan.safeParse(json);
-    if (!plano.success) {
-      console.error('[ia] resposta fora do formato', plano.error.issues.slice(0, 3));
-      return send(res, 502, { erro: 'A IA respondeu num formato inesperado. Tente de novo.' });
-    }
-    return send(res, 200, { plano: plano.data, modelo: model });
-  } catch (err) {
-    if (err instanceof ApiError) {
-      console.error('[ia] erro da API do Gemini', err.status, err.message.slice(0, 300));
-      // Chave inválida: o app cai no leitor simples.
-      if (err.status === 401 || err.status === 403 || (err.status === 400 && /api key/i.test(err.message))) {
-        return send(res, 501, { erro: 'sem_chave' });
+  const pedido = `${atual ? `<movel_atual>\n${atual}\n</movel_atual>\n\n` : ''}<pedido>\n${texto}\n</pedido>`;
+  const models = process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : [DEFAULT_MODEL, FALLBACK_MODEL];
+  let last: ApiError | null = null;
+
+  // Tentativas, em ordem: com o esquema JSON; sem o esquema (descrito no prompt), se o Gemini recusar
+  // o esquema; de novo após um erro temporário (500/503); outro modelo se o padrão não existir.
+  for (const model of models) {
+    for (const withSchema of [true, false]) {
+      for (let retry = 0; retry < 2; retry++) {
+        try {
+          const response = await client.models.generateContent({
+            model,
+            contents: pedido,
+            config: withSchema
+              ? { systemInstruction: SYSTEM_PROMPT, responseMimeType: 'application/json', responseJsonSchema: RESPONSE_SCHEMA }
+              : {
+                  systemInstruction: `${SYSTEM_PROMPT}\n\nResponda somente com um JSON válido que siga este JSON Schema:\n${JSON.stringify(RESPONSE_SCHEMA)}`,
+                  responseMimeType: 'application/json',
+                },
+          });
+          return finish(res, response.text, model);
+        } catch (err) {
+          if (!(err instanceof ApiError)) {
+            console.error('[ia]', err);
+            return send(res, 500, { erro: 'Erro inesperado no assistente.', detalhe: String(err).slice(0, 200) });
+          }
+          last = err;
+          console.error(`[ia] erro do Gemini (${model}, esquema=${withSchema})`, err.status, err.message.slice(0, 500));
+          // Chave inválida: o app cai no leitor simples.
+          if (err.status === 401 || err.status === 403 || (err.status === 400 && /api key/i.test(err.message))) {
+            return send(res, 501, { erro: 'sem_chave' });
+          }
+          if (err.status === 429) {
+            return send(res, 429, { erro: 'A cota gratuita da IA acabou por agora. Tente de novo em alguns minutos.', detalhe: googleMessage(err) });
+          }
+          if (err.status >= 500 && retry === 0) {
+            await new Promise((r) => setTimeout(r, 1500));
+            continue;
+          }
+          break;
+        }
       }
-      if (err.status === 429) return send(res, 429, { erro: 'A cota da IA acabou por agora. Tente de novo em instantes.' });
-      if (err.status === 404) return send(res, 502, { erro: `O modelo ${model} não foi encontrado. Ajuste a variável GEMINI_MODEL.` });
-      return send(res, 502, { erro: 'O serviço de IA falhou. Tente de novo.' });
+      // Só vale tentar sem o esquema quando o problema foi o pedido (400), não o modelo.
+      if (!last || last.status !== 400) break;
     }
-    console.error('[ia]', err);
-    return send(res, 500, { erro: 'Erro inesperado no assistente.' });
+    if (!last || last.status !== 404) break;
   }
+
+  const status = last?.status ?? 0;
+  const erro =
+    status === 404
+      ? 'O modelo de IA não foi encontrado. Ajuste a variável GEMINI_MODEL no servidor.'
+      : status >= 500
+        ? 'O Gemini está sobrecarregado agora. Tente de novo em instantes.'
+        : 'O serviço de IA recusou o pedido.';
+  return send(res, 502, { erro, detalhe: last ? `Gemini ${status}: ${googleMessage(last)}` : undefined });
+}
+
+/** Mensagem legível do erro do Google (o corpo costuma ser um JSON com error.message). */
+function googleMessage(err: ApiError): string {
+  try {
+    const parsed = JSON.parse(err.message) as { error?: { message?: string } };
+    if (parsed.error?.message) return parsed.error.message.slice(0, 300);
+  } catch {
+    // não é JSON
+  }
+  return err.message.slice(0, 300);
+}
+
+function finish(res: ServerResponse, text: string | undefined, model: string) {
+  if (!text) {
+    // Sem texto: bloqueado pelos filtros de segurança ou resposta vazia.
+    return send(res, 422, { erro: 'O assistente não pôde atender a esse pedido. Tente descrever só o móvel e as medidas.' });
+  }
+  let json: unknown;
+  try {
+    // Sem o esquema, o modelo às vezes devolve o JSON dentro de um bloco ```json.
+    json = JSON.parse(text.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, ''));
+  } catch {
+    return send(res, 502, { erro: 'A resposta veio incompleta. Tente um pedido mais curto.' });
+  }
+  const plano = AiPlan.safeParse(json);
+  if (!plano.success) {
+    console.error('[ia] resposta fora do formato', JSON.stringify(plano.error.issues.slice(0, 3)));
+    return send(res, 502, { erro: 'A IA respondeu num formato inesperado. Tente de novo.', detalhe: plano.error.issues[0]?.message });
+  }
+  return send(res, 200, { plano: plano.data, modelo: model });
 }
 
 const middleware: Connect.NextHandleFunction = (req, res, next) => {

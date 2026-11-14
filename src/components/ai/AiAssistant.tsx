@@ -29,6 +29,8 @@ interface Exchange {
   criados: string[];
   alterado?: boolean;
   erro?: boolean;
+  /** Motivo técnico do erro (ex.: mensagem do Gemini), para diagnóstico. */
+  detalhe?: string;
 }
 
 // Reconhecimento de voz do navegador (Chrome/Edge/Safari), em português.
@@ -138,14 +140,17 @@ function AiPanel({ onClose }: { onClose: () => void }) {
         setTexto('');
         return;
       }
-      const body = (await res.json().catch(() => ({}))) as { erro?: string };
+      const body = (await res.json().catch(() => ({}))) as { erro?: string; detalhe?: string };
       if (res.status === 501 || res.status === 404) {
         // Servidor sem chave da API (ou hospedagem sem servidor): leitor simples.
         apply(parsePedido(pedido), 'simples', pedido);
         setTexto('');
         return;
       }
-      setHistory((h) => [...h, { texto: pedido, resposta: body.erro ?? `Erro ${res.status}.`, fonte: 'ia', criados: [], erro: true }]);
+      setHistory((h) => [
+        ...h,
+        { texto: pedido, resposta: body.erro ?? `Erro ${res.status}.`, fonte: 'ia', criados: [], erro: true, detalhe: body.detalhe },
+      ]);
     } catch {
       apply(parsePedido(pedido), 'simples', pedido);
       setTexto('');
@@ -209,10 +214,16 @@ function AiPanel({ onClose }: { onClose: () => void }) {
                     {h.fonte === 'ia' ? 'Feito pela IA (Gemini). Confira as medidas no editor.' : 'Feito pelo leitor simples (o servidor não tem chave de IA configurada). Confira as medidas no editor.'}
                   </p>
                 )}
+                {h.erro && h.detalhe && <p className="mt-1 break-words font-mono text-[11px] opacity-80">{h.detalhe}</p>}
                 {h.erro && (
-                  <button type="button" className="mt-1 text-xs font-medium underline" onClick={() => setTexto(h.texto)}>
-                    Tentar de novo
-                  </button>
+                  <div className="mt-1 flex gap-3">
+                    <button type="button" className="text-xs font-medium underline" onClick={() => setTexto(h.texto)}>
+                      Tentar de novo
+                    </button>
+                    <button type="button" className="text-xs font-medium underline" onClick={() => apply(parsePedido(h.texto), 'simples', h.texto)}>
+                      Montar sem IA
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
