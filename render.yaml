@@ -1,5 +1,7 @@
 # Blueprint do Render: publica o WoodCraft Planner como site estático.
 # No painel do Render: New → Blueprint → selecione este repositório.
+# O assistente "Montar com IA" precisa de servidor: para usá-lo com o Claude, publique como Web Service
+# (yarn start) com a variável ANTHROPIC_API_KEY — veja o README. No site estático ele usa o leitor simples.
 services:
   - type: web
     name: woodcraft-planner
