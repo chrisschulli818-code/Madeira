@@ -1,7 +1,7 @@
 /**
  * Formato da resposta do assistente de IA ("descreva o móvel e eu monto").
  *
- * O servidor pede ao Claude uma resposta neste formato (saída estruturada) e o app converte
+ * O servidor pede ao Gemini uma resposta neste formato (saída estruturada) e o app converte
  * cada móvel em um item do projeto (`aiSpec.ts`), validando tudo com o mesmo leitor dos
  * arquivos de projeto. Medidas sempre em milímetros.
  *

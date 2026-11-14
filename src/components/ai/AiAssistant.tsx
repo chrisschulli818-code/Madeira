@@ -1,7 +1,7 @@
 /**
  * "Montar com IA": o usuário descreve (ou fala) o móvel com as medidas e o app monta.
  *
- * O pedido vai para o endpoint /api/montar (Claude, no servidor). Se o servidor não tiver chave
+ * O pedido vai para o endpoint /api/montar (Gemini, no servidor). Se o servidor não tiver chave
  * da API ou não estiver acessível, um leitor simples de texto monta o básico localmente.
  */
 import { useEffect, useRef, useState } from 'react';
@@ -206,7 +206,7 @@ function AiPanel({ onClose }: { onClose: () => void }) {
                 )}
                 {!h.erro && (
                   <p className="mt-1 text-[11px] text-subtle">
-                    {h.fonte === 'ia' ? 'Feito pela IA (Claude). Confira as medidas no editor.' : 'Feito pelo leitor simples (o servidor não tem chave de IA configurada). Confira as medidas no editor.'}
+                    {h.fonte === 'ia' ? 'Feito pela IA (Gemini). Confira as medidas no editor.' : 'Feito pelo leitor simples (o servidor não tem chave de IA configurada). Confira as medidas no editor.'}
                   </p>
                 )}
                 {h.erro && (
