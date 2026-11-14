@@ -41,7 +41,7 @@ A partir das medidas externas e das opções de construção, gera automaticamen
 - **Montar com IA**: descreva o móvel (digitando ou falando, pelo microfone do navegador) com medidas, portas,
   gavetas, prateleiras… e o app monta: escolhe o modelo, preenche as medidas e os vãos e já gera corte, compras e
   montagem. Também altera o móvel aberto ("aumenta para 1,20 e coloca mais uma gaveta") e monta vários móveis de uma
-  vez. Usa o Claude no servidor (veja abaixo como ativar); sem chave, usa um leitor simples de texto;
+  vez. Usa o Gemini (Google) no servidor (veja abaixo como ativar); sem chave, usa um leitor simples de texto;
 - **Tela expandida**: esconde cabeçalho e abas e deixa só o editor e o 3D (botão **Expandir**, Esc para sair).
   **Novo → Do zero** já abre o projeto em branco nesse modo.
 
@@ -85,12 +85,13 @@ Cada push na `main` gera um novo deploy automaticamente.
 
 ### Ativar o assistente de IA ("Montar com IA")
 
-O assistente usa o Claude pelo endpoint `/api/montar`, que roda no próprio servidor do app (dev e `yarn start`).
+O assistente usa o Gemini (Google) pelo endpoint `/api/montar`, que roda no próprio servidor do app (dev e `yarn start`).
 A chave fica só no servidor:
 
-1. Crie uma chave em [platform.claude.com](https://platform.claude.com) (API Keys).
-2. No Render, use o modo **Web Service** (acima) e, em **Environment**, adicione `ANTHROPIC_API_KEY` com a chave.
-   Localmente: `ANTHROPIC_API_KEY=... yarn start`.
+1. Crie uma chave gratuita no [Google AI Studio](https://aistudio.google.com/apikey) (**Get API key**).
+2. No Render, use o modo **Web Service** (acima) e, em **Environment**, adicione `GEMINI_API_KEY` com a chave.
+   Localmente: `GEMINI_API_KEY=... yarn start`.
+3. Opcional: `GEMINI_MODEL` troca o modelo (padrão `gemini-3.8-flash`).
 
 Sem a chave (ou no modo Static Site, que não tem servidor), o botão continua funcionando com o **leitor simples**,
 que entende o tipo de móvel, as medidas e as quantidades de portas, gavetas, prateleiras e vãos. O endpoint aceita

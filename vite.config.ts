@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { aiPlugin } from './server/aiPlugin';
 
 export default defineConfig({
-  // aiPlugin: endpoint /api/montar do assistente de IA (chave em ANTHROPIC_API_KEY, só no servidor).
+  // aiPlugin: endpoint /api/montar do assistente de IA com Gemini (chave em GEMINI_API_KEY, só no servidor).
   plugins: [react(), tailwindcss(), aiPlugin()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },

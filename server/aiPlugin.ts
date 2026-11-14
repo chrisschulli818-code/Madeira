@@ -1,17 +1,19 @@
 /**
  * Endpoint do assistente de IA: POST /api/montar { texto, atual? } → { plano }.
  *
- * Roda dentro do servidor do Vite (dev e `vite preview`, que é o que o Render executa), então
- * a chave da API fica só no servidor (variável ANTHROPIC_API_KEY) e nunca vai para o navegador.
- * Sem chave, responde 501 e o app usa o leitor simples de texto.
+ * Usa o Gemini (Google). Roda dentro do servidor do Vite (dev e `vite preview`, que é o que o
+ * Render executa), então a chave da API fica só no servidor (variável GEMINI_API_KEY) e nunca vai
+ * para o navegador. Sem chave, responde 501 e o app usa o leitor simples de texto.
+ *
+ * O modelo pode ser trocado pela variável GEMINI_MODEL.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Connect, Plugin } from 'vite';
-import Anthropic from '@anthropic-ai/sdk';
-import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
+import { ApiError, GoogleGenAI } from '@google/genai';
+import { z } from 'zod';
 import { AiPlan } from '../src/engine/aiSchema';
 
-const MODEL = 'claude-opus-5-5';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 const MAX_TEXT = 2000;
 /** Pedidos por IP por hora (o endpoint é público no Render). */
 const RATE_LIMIT = 30;
@@ -66,13 +68,21 @@ function send(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-let client: Anthropic | null = null;
+const apiKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+
+/** Esquema JSON da resposta (o Gemini aceita JSON Schema sem o campo $schema). */
+const RESPONSE_SCHEMA = (() => {
+  const { $schema: _ignored, ...schema } = z.toJSONSchema(AiPlan) as Record<string, unknown>;
+  return schema;
+})();
+
+let client: GoogleGenAI | null = null;
+let clientKey = '';
 
 async function handle(req: IncomingMessage, res: ServerResponse) {
   if (req.method !== 'POST') return send(res, 405, { erro: 'Use POST.' });
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-    return send(res, 501, { erro: 'sem_chave' });
-  }
+  const key = apiKey();
+  if (!key) return send(res, 501, { erro: 'sem_chave' });
   const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.socket.remoteAddress || '?';
   if (!allowed(ip)) return send(res, 429, { erro: 'Muitos pedidos seguidos. Tente de novo em alguns minutos.' });
 
@@ -87,35 +97,47 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
   if (!texto) return send(res, 400, { erro: 'Descreva o móvel.' });
 
-  client ??= new Anthropic();
+  if (!client || clientKey !== key) {
+    client = new GoogleGenAI({ apiKey: key });
+    clientKey = key;
+  }
+  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
   try {
-    const response = await client.beta.messages.parse({
-      model: MODEL,
-      max_tokens: 16000,
-      // Se o pedido for recusado pelos filtros de segurança, o próprio servidor da API tenta outro modelo.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      messages: [
-        {
-          role: 'user',
-          content: `${atual ? `<movel_atual>\n${atual}\n</movel_atual>\n\n` : ''}<pedido>\n${texto}\n</pedido>`,
-        },
-      ],
-      output_config: { format: betaZodOutputFormat(AiPlan) },
+    const response = await client.models.generateContent({
+      model,
+      contents: `${atual ? `<movel_atual>\n${atual}\n</movel_atual>\n\n` : ''}<pedido>\n${texto}\n</pedido>`,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+        responseJsonSchema: RESPONSE_SCHEMA,
+      },
     });
-    if (response.stop_reason === 'refusal') {
+    const text = response.text;
+    if (!text) {
+      // Sem texto: bloqueado pelos filtros de segurança ou resposta vazia.
       return send(res, 422, { erro: 'O assistente não pôde atender a esse pedido. Tente descrever só o móvel e as medidas.' });
     }
-    if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
       return send(res, 502, { erro: 'A resposta veio incompleta. Tente um pedido mais curto.' });
     }
-    return send(res, 200, { plano: response.parsed_output, modelo: response.model });
+    const plano = AiPlan.safeParse(json);
+    if (!plano.success) {
+      console.error('[ia] resposta fora do formato', plano.error.issues.slice(0, 3));
+      return send(res, 502, { erro: 'A IA respondeu num formato inesperado. Tente de novo.' });
+    }
+    return send(res, 200, { plano: plano.data, modelo: model });
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) return send(res, 501, { erro: 'sem_chave' });
-    if (err instanceof Anthropic.RateLimitError) return send(res, 429, { erro: 'O serviço de IA está ocupado. Tente de novo em instantes.' });
-    if (err instanceof Anthropic.APIError) {
-      console.error('[ia] erro da API', err.status, err.message);
+    if (err instanceof ApiError) {
+      console.error('[ia] erro da API do Gemini', err.status, err.message.slice(0, 300));
+      // Chave inválida: o app cai no leitor simples.
+      if (err.status === 401 || err.status === 403 || (err.status === 400 && /api key/i.test(err.message))) {
+        return send(res, 501, { erro: 'sem_chave' });
+      }
+      if (err.status === 429) return send(res, 429, { erro: 'A cota da IA acabou por agora. Tente de novo em instantes.' });
+      if (err.status === 404) return send(res, 502, { erro: `O modelo ${model} não foi encontrado. Ajuste a variável GEMINI_MODEL.` });
       return send(res, 502, { erro: 'O serviço de IA falhou. Tente de novo.' });
     }
     console.error('[ia]', err);
